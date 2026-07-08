@@ -36,7 +36,7 @@ ExpandEnvPath(p) {
     Loop {
         if !RegExMatch(p, "%(\w+)%", &m)
             return p
-        p := StrReplace(p, m[0], EnvGet(m[1]), , 1)
+        p := StrReplace(p, m[0], EnvGet(m[1]))
     }
 }
 
