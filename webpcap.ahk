@@ -26,12 +26,18 @@ LoadIni() {
     if (!FileExist(ini) && FileExist(ex))
         FileCopy ex, ini
     FFMPEG := IniRead(ini, "paths", "ffmpeg", "ffmpeg.exe")
-    OUT := IniRead(ini, "paths", "outdir", EnvGet("USERPROFILE") "\Pictures\Screenshots\WebP")
-    if InStr(OUT, "%")
-        OUT := RegExReplace(OUT, "%(\w+)%", (m) => EnvGet(m[1]))
+    OUT := ExpandEnvPath(IniRead(ini, "paths", "outdir", EnvGet("USERPROFILE") "\Pictures\Screenshots\WebP"))
     Q := IniRead(ini, "encode", "quality", 90)
     LOSSLESS := IniRead(ini, "encode", "lossless", 0)
     REMAP := IniRead(ini, "hotkeys", "remap", 1)
+}
+
+ExpandEnvPath(p) {
+    Loop {
+        if !RegExMatch(p, "%(\w+)%", &m)
+            return p
+        p := StrReplace(p, m[0], EnvGet(m[1]), , 1)
+    }
 }
 
 Go(mode) {
