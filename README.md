@@ -6,9 +6,20 @@ Hotkey-native Windows screenshots that land as `.webp` files and on the clipboar
 
 ## Quick start
 
+**PowerShell** (your default shell):
+
+```powershell
+cd E:\Code-Y\GitHub-Repo-Helper\Repos\webpcap
+.\build.ps1
+.\test_hotkeys.ps1   # debug run + v0.1 checklist
+```
+
+**CMD** (if you prefer):
+
 ```bat
-build.bat          rem start daemon (background)
-test_hotkeys.bat   rem debug run + v0.1 checklist
+cd /d E:\Code-Y\GitHub-Repo-Helper\Repos\webpcap
+build.bat
+test_hotkeys.bat
 ```
 
 Edit `webpcap.ini` for output folder, quality (85–92), lossless toggle, and hotkey remap on/off.
