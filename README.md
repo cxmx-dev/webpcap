@@ -81,12 +81,25 @@ build.bat
 
 Edit `webpcap.ini`, then restart the daemon (`.\build.ps1` again after stopping the old instance).
 
+### Verify pipeline (no hotkeys)
+
+```powershell
+cd <path-to>\webpcap
+.\verify.ps1
+```
+
+If `verify.ps1` creates a `.webp` but `PrtSc` does not, the daemon is fine — Windows is stealing the hotkey.
+
 ### If nothing saves
 
-1. Close other screenshot tools (ShareX, Snipping Tool, etc.) — they may grab `PrtSc` first.
-2. Confirm FFmpeg: `ffmpeg -encoders 2>&1 | Select-String libwebp`
-3. Run debug mode and watch for tooltips on save.
-4. Restart: end `AutoHotkey64.exe` in Task Manager, then `.\build.ps1`.
+1. **Windows 11:** Settings → Accessibility → Keyboard → turn **OFF** *Use the Print screen key to open screen snipping*.
+2. Close other screenshot tools (ShareX, Snipping Tool, etc.).
+3. Confirm FFmpeg path in `webpcap.ini` exists on disk.
+4. Run `.\verify.ps1` first, then `.\test_hotkeys.ps1` for hotkey test.
+5. Check log: `notepad "$env:TEMP\webpcap.log"`
+6. Restart: end `AutoHotkey64.exe`, then `.\build.ps1`.
+
+**Wrong folder?** Always run scripts from inside `webpcap` (`.\test_hotkeys.ps1` fails from the parent hub folder).
 
 ---
 

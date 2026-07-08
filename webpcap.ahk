@@ -1,8 +1,11 @@
 #Requires AutoHotkey v2.0
 #SingleInstance Force
+#UseHook
 ; webpcap v0.1 — zero-UI screenshot → WebP hotkey daemon
 
 global FFMPEG := "", OUT := "", Q := 90, LOSSLESS := 0, REMAP := 1, DBG := false
+global PSHELL := A_WinDir "\System32\WindowsPowerShell\v1.0\powershell.exe"
+
 for a in A_Args
     if (a = "--debug")
         DBG := true
@@ -30,6 +33,8 @@ LoadIni() {
     Q := IniRead(ini, "encode", "quality", 90)
     LOSSLESS := IniRead(ini, "encode", "lossless", 0)
     REMAP := IniRead(ini, "hotkeys", "remap", 1)
+    if (!FileExist(FFMPEG))
+        Tip("ffmpeg not found: " FFMPEG, 4000)
 }
 
 ExpandEnvPath(p) {
@@ -47,21 +52,26 @@ Go(mode) {
     webp := OUT "\Screenshot_" ts ".webp"
     ok := mode = "full" ? CapFull(png) : mode = "region" ? CapRegion(png) : CapActive(png)
     if (!ok)
-        return Tip("capture cancelled")
+        return Tip("capture failed — see webpcap.log", 3000)
     if (!ToWebP(png, webp))
-        return Tip("ffmpeg failed")
+        return Tip("ffmpeg failed — check webpcap.ini ffmpeg path", 3000)
+    ClipImgPng(png)
     FileDelete(png)
-    ClipImg(webp)
-    if (DBG)
-        Tip("saved " webp)
+    Tip(DBG ? "saved " webp : "webpcap saved", DBG ? 0 : 1500)
 }
 
 RunPs1(script) {
+    global PSHELL
     ps1 := A_Temp "\webpcap_run_" A_TickCount ".ps1"
     try {
-        FileDelete ps1
-        FileAppend script, ps1, "UTF-8"
-        return RunWait('powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' ps1 '"', , "Hide") = 0
+        if FileExist(ps1)
+            FileDelete ps1
+        FileAppend script, ps1, "UTF-8-RAW"
+        cmd := '"' PSHELL '" -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' ps1 '"'
+        exitCode := RunWait(cmd, , "Hide")
+        if (exitCode != 0)
+            Log("RunPs1 exit " exitCode " :: " ps1)
+        return exitCode = 0
     } finally {
         if FileExist(ps1)
             FileDelete ps1
@@ -150,26 +160,46 @@ WaitClick(&x, &y) {
 
 ToWebP(png, webp) {
     global FFMPEG, Q, LOSSLESS
+    if (!FileExist(FFMPEG)) {
+        Log("ffmpeg missing: " FFMPEG)
+        return false
+    }
+    if (!FileExist(png)) {
+        Log("png missing: " png)
+        return false
+    }
     if (LOSSLESS)
-        args := '-y -i "' png '" -c:v libwebp -lossless 1 "' webp '"'
+        args := '-hide_banner -loglevel error -y -i "' png '" -c:v libwebp -lossless 1 "' webp '"'
     else
-        args := '-y -i "' png '" -c:v libwebp -q:v ' Q ' "' webp '"'
-    return RunWait('"' FFMPEG '" ' args, , "Hide") = 0
+        args := '-hide_banner -loglevel error -y -i "' png '" -c:v libwebp -q:v ' Q ' "' webp '"'
+    cmd := '"' FFMPEG '" ' args
+    exitCode := RunWait(cmd, , "Hide")
+    if (exitCode != 0)
+        Log("ffmpeg exit " exitCode " :: " cmd)
+    return exitCode = 0
 }
 
-ClipImg(webp) {
+ClipImgPng(png) {
     script := "
     (
     Add-Type -AssemblyName System.Windows.Forms,System.Drawing
-    `$i = [Drawing.Image]::FromFile('" webp "')
+    `$i = [Drawing.Image]::FromFile('" png "')
     [Windows.Forms.Clipboard]::SetImage(`$i)
     `$i.Dispose()
     )"
     RunPs1(script)
 }
 
-Tip(msg) {
+Log(msg) {
     global DBG
+    line := FormatTime(, "yyyy-MM-dd HH:mm:ss") " " msg "`n"
+    try FileAppend line, A_Temp "\webpcap.log", "UTF-8-RAW"
     if (DBG)
-        ToolTip msg, , , 1
+        ToolTip msg, , , 2
+}
+
+Tip(msg, timeout := 0) {
+    ToolTip msg, , , 1
+    if (timeout > 0)
+        SetTimer () => ToolTip(), -timeout
 }

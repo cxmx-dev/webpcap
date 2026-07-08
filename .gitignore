@@ -11,5 +11,6 @@ README.dev.md
 webpcap.ini
 docs/
 *.log
+webpcap.log
 Thumbs.db
 desktop.ini
