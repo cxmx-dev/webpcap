@@ -121,4 +121,6 @@ Hotkey-native Windows screenshots that land as `.webp` files and on the clipboar
 
 ## Version History
 
-v0.1 — Controls-first README; standalone run guide; `webpcap.ini.example`; temp-`.ps1` capture; privacy-safe public docs (no machine paths in tracked files).
+v0.1.1 — `verify.ps1` pipeline test; `#UseHook`; PNG clipboard (not WebP); `%TEMP%\webpcap.log`; Win11 snipping-setting note; visible save/error tooltips.
+
+v0.1 — Controls-first README; standalone run guide; `webpcap.ini.example`; temp-`.ps1` capture; privacy-safe public docs.
