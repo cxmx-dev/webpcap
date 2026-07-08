@@ -2,22 +2,25 @@
 
 **Custom Media Pipeline Utility — zero-dependency WebP screenshot daemon**
 
-Hotkey-native Windows screenshots that land as `.webp` files and on the clipboard — no Snipping Tool UI, no tray clutter, no OCR. One AHK v2 script pipes captures through your local FFmpeg engine (`libwebp`) and saves to `Pictures\Screenshots\WebP\`.
+Hotkey-native Windows screenshots that land as `.webp` files and on the clipboard — no Snipping Tool UI, no tray clutter, no OCR. One AHK v2 script pipes captures through FFmpeg (`libwebp`) and saves to `Pictures\Screenshots\WebP\`.
 
 ## Quick start
 
-**PowerShell** (your default shell):
+1. Copy `webpcap.ini.example` → `webpcap.ini` and set your `ffmpeg` path (or leave `ffmpeg.exe` if on PATH).
+2. Install [AutoHotkey v2](https://www.autohotkey.com/).
+
+**PowerShell:**
 
 ```powershell
-cd E:\Code-Y\GitHub-Repo-Helper\Repos\webpcap
+cd <path-to>\webpcap
 .\build.ps1
 .\test_hotkeys.ps1   # debug run + v0.1 checklist
 ```
 
-**CMD** (if you prefer):
+**CMD:**
 
 ```bat
-cd /d E:\Code-Y\GitHub-Repo-Helper\Repos\webpcap
+cd /d <path-to>\webpcap
 build.bat
 test_hotkeys.bat
 ```
@@ -37,19 +40,13 @@ Pass `--debug` for save tooltips and tray icon.
 ## Stack
 
 - **AutoHotkey v2** — hotkey hooks, zero UI
-- **FFmpeg** (`E:\Code-Y\engine - ffmpeg\ffmpeg.exe`) — PNG → WebP via `libwebp`
+- **FFmpeg** — PNG → WebP via `libwebp` (configure path in `webpcap.ini`)
 - **PowerShell** — GDI capture + clipboard (built into Windows)
 
 ## Portfolio blurb
 
-*webpcap* is a 120-line media pipeline micro-tool: it intercepts native screenshot hotkeys, captures via WinAPI/GDI with no overlay chrome, and immediately transcodes to WebP through a pinned FFmpeg build — saving named files and refreshing the clipboard in one motion. Built for local-first workflow (config ini, one-click batch launch, convo log) as a hireable proof of Tools/Pipeline Engineer instincts: minimal surface area, deterministic output, and real encoder integration instead of yet another Electron tray app.
+*webpcap* is a media pipeline micro-tool: it intercepts native screenshot hotkeys, captures via WinAPI/GDI with no overlay chrome, and immediately transcodes to WebP through FFmpeg — saving named files and refreshing the clipboard in one motion. Built for local-first workflow (config ini, one-click batch launch) as a hireable proof of Tools/Pipeline Engineer instincts: minimal surface area, deterministic output, and real encoder integration instead of yet another Electron tray app.
 
 ## Version History
 
-70826 3:43:34:70 AM CST
-• Post-v0.1 fixes: `build.ps1` / `test_hotkeys.ps1` for PowerShell (`feaa6e3`); AHK `'''` quote bug → `Chr(39)` path embed (`db768a7`); daemon launch verified by User.
-• Hub docs synced (`update .mds`).
-
-70826 3:06:35:56 AM CST
-• v0.1 scaffold shipped: `webpcap.ahk` (123 lines), `webpcap.ini`, `build.bat`, `test_hotkeys.bat`; FFmpeg `libwebp` pipe verified; git init + commit `0a09e9e`.
-• Local-only — not deployed via `start.ps1`.
+v0.1 — AHK daemon, ini config, PowerShell/CMD launchers, FFmpeg WebP pipe, hub `local-tool` registration.

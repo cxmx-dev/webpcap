@@ -1,5 +1,6 @@
 [paths]
-ffmpeg=E:\Code-Y\engine - ffmpeg\ffmpeg.exe
+; ffmpeg on PATH, or full path to ffmpeg.exe
+ffmpeg=ffmpeg.exe
 outdir=%USERPROFILE%\Pictures\Screenshots\WebP
 
 [encode]
