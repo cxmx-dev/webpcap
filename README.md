@@ -49,4 +49,4 @@ Pass `--debug` for save tooltips and tray icon.
 
 ## Version History
 
-v0.1 — AHK daemon, ini config, PowerShell/CMD launchers, FFmpeg WebP pipe, hub `local-tool` registration.
+v0.1 — AHK daemon, `webpcap.ini.example`, PowerShell/CMD launchers, FFmpeg WebP pipe, hub `local-tool` via `hub.kind`, temp-`.ps1` capture (no fragile inline quoting).
