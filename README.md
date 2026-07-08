@@ -121,6 +121,8 @@ Hotkey-native Windows screenshots that land as `.webp` files and on the clipboar
 
 ## Version History
 
-v0.1.1 — `verify.ps1` pipeline test; `#UseHook`; PNG clipboard (not WebP); `%TEMP%\webpcap.log`; Win11 snipping-setting note; visible save/error tooltips.
+v0.1.2 — **RunWait fix** (`RunWait(exe, args,,, "Hide")`) — hotkey capture/ffmpeg subprocesses actually run.
+
+v0.1.1 — `verify.ps1`; `#UseHook`; PNG clipboard; `%TEMP%\webpcap.log`; Win11 snipping note; accurate error messages.
 
 v0.1 — Controls-first README; standalone run guide; `webpcap.ini.example`; temp-`.ps1` capture; privacy-safe public docs.
