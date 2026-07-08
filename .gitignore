@@ -2,6 +2,10 @@
 *.png
 *.webp
 webpcap_convo.md
+iteration-log.md
+PLAN.md
+NOTES.md
+README.dev.md
 *.log
 Thumbs.db
 desktop.ini

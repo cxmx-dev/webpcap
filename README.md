@@ -35,4 +35,6 @@ Pass `--debug` for save tooltips and tray icon.
 
 ## Version History
 
-**070826** — v0.1 scaffold: AHK daemon, ini config, build/test batches, FFmpeg WebP pipe.
+70826 3:06:35:56 AM CST
+• v0.1 scaffold shipped: `webpcap.ahk` (119 lines), `webpcap.ini`, `build.bat`, `test_hotkeys.bat`; FFmpeg `libwebp` pipe verified; git init + commit `0a09e9e`.
+• Hub docs synced (`update .mds`); local-only — not deployed via `start.ps1`.
