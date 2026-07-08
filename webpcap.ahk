@@ -48,10 +48,11 @@ Go(mode) {
 }
 
 CapFull(png) {
+    q := Chr(39)
     ps := 'Add-Type -A System.Windows.Forms,System.Drawing;'
     . '$r=[Drawing.Rectangle]::Empty;[Windows.Forms.Screen]::AllScreens|%{$r=if($r.IsEmpty){$_.Bounds}else{[Drawing.Rectangle]::Union($r,$_.Bounds)}};'
     . '$b=New-Object Drawing.Bitmap $r.Width,$r.Height;$g=[Drawing.Graphics]::FromImage($b);'
-    . '$g.CopyFromScreen($r.Location,[Drawing.Point]::Empty,$r.Size);$b.Save(''' png ''',[Drawing.Imaging.ImageFormat]::Png);$g.Dispose();$b.Dispose()'
+    . '$g.CopyFromScreen($r.Location,[Drawing.Point]::Empty,$r.Size);$b.Save(' q png q ',[Drawing.Imaging.ImageFormat]::Png);$g.Dispose();$b.Dispose()'
     return RunWait('powershell.exe -NoProfile -WindowStyle Hidden -Command "' ps '"', , "Hide") = 0
 }
 
@@ -66,13 +67,15 @@ CapRegion(png) {
     x := Min(x1, x2), y := Min(y1, y2), w := Abs(x2 - x1), h := Abs(y2 - y1)
     if (w < 2 || h < 2)
         return false
+    q := Chr(39)
     ps := 'Add-Type -A System.Windows.Forms,System.Drawing;$b=New-Object Drawing.Bitmap ' w ',' h ';'
     . '$g=[Drawing.Graphics]::FromImage($b);$g.CopyFromScreen(' x ',' y ',[Drawing.Point]::Empty,[Drawing.Size]::new(' w ',' h '));'
-    . '$b.Save(''' png ''',[Drawing.Imaging.ImageFormat]::Png);$g.Dispose();$b.Dispose()'
+    . '$b.Save(' q png q ',[Drawing.Imaging.ImageFormat]::Png);$g.Dispose();$b.Dispose()'
     return RunWait('powershell.exe -NoProfile -WindowStyle Hidden -Command "' ps '"', , "Hide") = 0
 }
 
 CapActive(png) {
+    q := Chr(39)
     ps := 'Add-Type -A System.Windows.Forms,System.Drawing;'
     . '$h=(Add-Type -M user32.dll -P ''[DllImport("user32.dll")]public static extern IntPtr GetForegroundWindow();'
     . '[DllImport("user32.dll")]public static extern bool GetWindowRect(IntPtr h,out RECT r);'
@@ -80,7 +83,7 @@ CapActive(png) {
     . '$r=New-Object RECT;$null=[user32]::GetWindowRect($h,[ref]$r);'
     . '$w=$r.R-$r.L;$h=$r.B-$r.T;$b=New-Object Drawing.Bitmap $w,$h;'
     . '$g=[Drawing.Graphics]::FromImage($b);$g.CopyFromScreen($r.L,$r.T,[Drawing.Point]::Empty,[Drawing.Size]::new($w,$h));'
-    . '$b.Save(''' png ''',[Drawing.Imaging.ImageFormat]::Png);$g.Dispose();$b.Dispose()'
+    . '$b.Save(' q png q ',[Drawing.Imaging.ImageFormat]::Png);$g.Dispose();$b.Dispose()'
     return RunWait('powershell.exe -NoProfile -WindowStyle Hidden -Command "' ps '"', , "Hide") = 0
 }
 
@@ -107,8 +110,9 @@ ToWebP(png, webp) {
 }
 
 ClipImg(webp) {
+    q := Chr(39)
     ps := 'Add-Type -A System.Windows.Forms,System.Drawing;'
-    . '$i=[Drawing.Image]::FromFile(''' webp ''');[Windows.Forms.Clipboard]::SetImage($i);$i.Dispose()'
+    . '$i=[Drawing.Image]::FromFile(' q webp q ');[Windows.Forms.Clipboard]::SetImage($i);$i.Dispose()'
     RunWait('powershell.exe -NoProfile -WindowStyle Hidden -Command "' ps '"', , "Hide")
 }
 
