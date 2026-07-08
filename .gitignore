@@ -1,6 +1,8 @@
 *.exe
 *.png
 *.webp
+_project.ps1
+start.ps1
 webpcap_convo.md
 iteration-log.md
 PLAN.md
