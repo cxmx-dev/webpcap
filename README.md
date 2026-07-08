@@ -46,6 +46,10 @@ Pass `--debug` for save tooltips and tray icon.
 
 ## Version History
 
+70826 3:43:34:70 AM CST
+• Post-v0.1 fixes: `build.ps1` / `test_hotkeys.ps1` for PowerShell (`feaa6e3`); AHK `'''` quote bug → `Chr(39)` path embed (`db768a7`); daemon launch verified by User.
+• Hub docs synced (`update .mds`).
+
 70826 3:06:35:56 AM CST
-• v0.1 scaffold shipped: `webpcap.ahk` (119 lines), `webpcap.ini`, `build.bat`, `test_hotkeys.bat`; FFmpeg `libwebp` pipe verified; git init + commit `0a09e9e`.
-• Hub docs synced (`update .mds`); local-only — not deployed via `start.ps1`.
+• v0.1 scaffold shipped: `webpcap.ahk` (123 lines), `webpcap.ini`, `build.bat`, `test_hotkeys.bat`; FFmpeg `libwebp` pipe verified; git init + commit `0a09e9e`.
+• Local-only — not deployed via `start.ps1`.
