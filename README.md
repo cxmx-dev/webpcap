@@ -95,8 +95,8 @@ If `verify.ps1` creates a `.webp` but `PrtSc` does not, the daemon is fine — W
 1. **Windows 11:** Settings → Accessibility → Keyboard → turn **OFF** *Use the Print screen key to open screen snipping*.
 2. Close other screenshot tools (ShareX, Snipping Tool, etc.).
 3. Confirm FFmpeg path in `webpcap.ini` exists on disk.
-4. Run `.\verify.ps1` first, then `.\test_hotkeys.ps1` for hotkey test.
-5. Check log: `notepad "$env:TEMP\webpcap.log"`
+4. Run `.\verify.ps1` first — if that works but hotkeys fail, capture (not ffmpeg/ini) is the issue.
+5. Check log: `notepad "$env:TEMP\webpcap.log"` (`png missing` = capture; `ffmpeg exit` = encode).
 6. Restart: end `AutoHotkey64.exe`, then `.\build.ps1`.
 
 **Wrong folder?** Always run scripts from inside `webpcap` (`.\test_hotkeys.ps1` fails from the parent hub folder).

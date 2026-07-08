@@ -34,7 +34,7 @@ LoadIni() {
     LOSSLESS := IniRead(ini, "encode", "lossless", 0)
     REMAP := IniRead(ini, "hotkeys", "remap", 1)
     if (!FileExist(FFMPEG))
-        Tip("ffmpeg not found: " FFMPEG, 4000)
+        Tip("ffmpeg not found — edit webpcap.ini", 4000)
 }
 
 ExpandEnvPath(p) {
@@ -46,31 +46,37 @@ ExpandEnvPath(p) {
 }
 
 Go(mode) {
-    global OUT, DBG
-    ts := FormatTime(, "yyyyMMdd_HHmmss")
+    global OUT, DBG, FFMPEG
+    ts := FormatTime(, "yyyyMMdd_HHmmss") "_" A_TickCount
     png := A_Temp "\webpcap_" ts ".png"
     webp := OUT "\Screenshot_" ts ".webp"
     ok := mode = "full" ? CapFull(png) : mode = "region" ? CapRegion(png) : CapActive(png)
-    if (!ok)
-        return Tip("capture failed — see webpcap.log", 3000)
+    if (!ok || !FileExist(png))
+        return Tip("capture failed — see %TEMP%\webpcap.log", 4000)
+    if (!FileExist(FFMPEG))
+        return Tip("ffmpeg not found — edit webpcap.ini", 4000)
     if (!ToWebP(png, webp))
-        return Tip("ffmpeg failed — check webpcap.ini ffmpeg path", 3000)
+        return Tip("ffmpeg encode failed — see webpcap.log", 4000)
     ClipImgPng(png)
     FileDelete(png)
     Tip(DBG ? "saved " webp : "webpcap saved", DBG ? 0 : 1500)
 }
 
-RunPs1(script) {
+RunPs1(script, verifyFile := "") {
     global PSHELL
     ps1 := A_Temp "\webpcap_run_" A_TickCount ".ps1"
     try {
         if FileExist(ps1)
             FileDelete ps1
         FileAppend script, ps1, "UTF-8-RAW"
-        cmd := '"' PSHELL '" -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' ps1 '"'
-        exitCode := RunWait(cmd, , "Hide")
+        args := '-STA -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' ps1 '"'
+        exitCode := RunWait(PSHELL, args, , "Hide")
         if (exitCode != 0)
-            Log("RunPs1 exit " exitCode " :: " ps1)
+            Log("RunPs1 exit " exitCode)
+        if (verifyFile && !FileExist(verifyFile)) {
+            Log("capture file missing: " verifyFile " (exit " exitCode ")")
+            return false
+        }
         return exitCode = 0
     } finally {
         if FileExist(ps1)
@@ -79,6 +85,7 @@ RunPs1(script) {
 }
 
 CapFull(png) {
+    EnvSet "WEBPCAP_OUT", png
     script := "
     (
     Add-Type -AssemblyName System.Windows.Forms,System.Drawing
@@ -89,10 +96,10 @@ CapFull(png) {
     `$b = New-Object Drawing.Bitmap `$r.Width, `$r.Height
     `$g = [Drawing.Graphics]::FromImage(`$b)
     `$g.CopyFromScreen(`$r.Location, [Drawing.Point]::Empty, `$r.Size)
-    `$b.Save('" png "', [Drawing.Imaging.ImageFormat]::Png)
+    `$b.Save(`$env:WEBPCAP_OUT, [Drawing.Imaging.ImageFormat]::Png)
     `$g.Dispose(); `$b.Dispose()
     )"
-    return RunPs1(script)
+    return RunPs1(script, png)
 }
 
 CapRegion(png) {
@@ -106,19 +113,21 @@ CapRegion(png) {
     x := Min(x1, x2), y := Min(y1, y2), w := Abs(x2 - x1), h := Abs(y2 - y1)
     if (w < 2 || h < 2)
         return false
+    EnvSet "WEBPCAP_OUT", png
     script := "
     (
     Add-Type -AssemblyName System.Windows.Forms,System.Drawing
     `$b = New-Object Drawing.Bitmap " w ", " h "
     `$g = [Drawing.Graphics]::FromImage(`$b)
     `$g.CopyFromScreen(" x ", " y ", [Drawing.Point]::Empty, [Drawing.Size]::new(" w ", " h "))
-    `$b.Save('" png "', [Drawing.Imaging.ImageFormat]::Png)
+    `$b.Save(`$env:WEBPCAP_OUT, [Drawing.Imaging.ImageFormat]::Png)
     `$g.Dispose(); `$b.Dispose()
     )"
-    return RunPs1(script)
+    return RunPs1(script, png)
 }
 
 CapActive(png) {
+    EnvSet "WEBPCAP_OUT", png
     script := "
     (
     Add-Type -AssemblyName System.Windows.Forms,System.Drawing
@@ -132,17 +141,17 @@ CapActive(png) {
     }
     '@
     Add-Type -TypeDefinition `$code
-    `$h = [Win32]::GetForegroundWindow()
+    `$hwnd = [Win32]::GetForegroundWindow()
     `$r = New-Object Win32+RECT
-    [void][Win32]::GetWindowRect(`$h, [ref]`$r)
-    `$w = `$r.R - `$r.L; `$h = `$r.B - `$r.T
-    `$b = New-Object Drawing.Bitmap `$w, `$h
+    [void][Win32]::GetWindowRect(`$hwnd, [ref]`$r)
+    `$w = `$r.R - `$r.L; `$ht = `$r.B - `$r.T
+    `$b = New-Object Drawing.Bitmap `$w, `$ht
     `$g = [Drawing.Graphics]::FromImage(`$b)
-    `$g.CopyFromScreen(`$r.L, `$r.T, [Drawing.Point]::Empty, [Drawing.Size]::new(`$w, `$h))
-    `$b.Save('" png "', [Drawing.Imaging.ImageFormat]::Png)
+    `$g.CopyFromScreen(`$r.L, `$r.T, [Drawing.Point]::Empty, [Drawing.Size]::new(`$w, `$ht))
+    `$b.Save(`$env:WEBPCAP_OUT, [Drawing.Imaging.ImageFormat]::Png)
     `$g.Dispose(); `$b.Dispose()
     )"
-    return RunPs1(script)
+    return RunPs1(script, png)
 }
 
 WaitClick(&x, &y) {
@@ -160,30 +169,21 @@ WaitClick(&x, &y) {
 
 ToWebP(png, webp) {
     global FFMPEG, Q, LOSSLESS
-    if (!FileExist(FFMPEG)) {
-        Log("ffmpeg missing: " FFMPEG)
-        return false
-    }
-    if (!FileExist(png)) {
-        Log("png missing: " png)
-        return false
-    }
-    if (LOSSLESS)
-        args := '-hide_banner -loglevel error -y -i "' png '" -c:v libwebp -lossless 1 "' webp '"'
-    else
-        args := '-hide_banner -loglevel error -y -i "' png '" -c:v libwebp -q:v ' Q ' "' webp '"'
-    cmd := '"' FFMPEG '" ' args
-    exitCode := RunWait(cmd, , "Hide")
+    args := (LOSSLESS
+        ? '-hide_banner -loglevel error -y -i "' png '" -c:v libwebp -lossless 1 "' webp '"'
+        : '-hide_banner -loglevel error -y -i "' png '" -c:v libwebp -q:v ' Q ' "' webp '"')
+    exitCode := RunWait('"' FFMPEG '" ' args, , "Hide")
     if (exitCode != 0)
-        Log("ffmpeg exit " exitCode " :: " cmd)
+        Log("ffmpeg exit " exitCode)
     return exitCode = 0
 }
 
 ClipImgPng(png) {
+    EnvSet "WEBPCAP_OUT", png
     script := "
     (
     Add-Type -AssemblyName System.Windows.Forms,System.Drawing
-    `$i = [Drawing.Image]::FromFile('" png "')
+    `$i = [Drawing.Image]::FromFile(`$env:WEBPCAP_OUT)
     [Windows.Forms.Clipboard]::SetImage(`$i)
     `$i.Dispose()
     )"
