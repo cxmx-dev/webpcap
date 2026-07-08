@@ -70,7 +70,7 @@ RunPs1(script, verifyFile := "") {
             FileDelete ps1
         FileAppend script, ps1, "UTF-8-RAW"
         args := '-STA -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' ps1 '"'
-        exitCode := RunWait(PSHELL, args, , "Hide")
+        exitCode := RunWait(PSHELL, args,,, "Hide")
         if (exitCode != 0)
             Log("RunPs1 exit " exitCode)
         if (verifyFile && !FileExist(verifyFile)) {
@@ -172,7 +172,7 @@ ToWebP(png, webp) {
     args := (LOSSLESS
         ? '-hide_banner -loglevel error -y -i "' png '" -c:v libwebp -lossless 1 "' webp '"'
         : '-hide_banner -loglevel error -y -i "' png '" -c:v libwebp -q:v ' Q ' "' webp '"')
-    exitCode := RunWait('"' FFMPEG '" ' args, , "Hide")
+    exitCode := RunWait('"' FFMPEG '"', args,,, "Hide")
     if (exitCode != 0)
         Log("ffmpeg exit " exitCode)
     return exitCode = 0
