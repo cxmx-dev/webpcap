@@ -86,13 +86,14 @@ Edit `webpcap.ini`, then restart the daemon (`.\build.ps1` again after stopping 
 ```powershell
 cd <path-to>\webpcap
 .\verify.ps1
+.\smoke-test.ps1    # AHK pipeline without hotkeys
 ```
 
-If `verify.ps1` creates a `.webp` but `PrtSc` does not, the daemon is fine — Windows is stealing the hotkey.
+If `verify.ps1` creates a `.webp` but `PrtSc` does not, the daemon is fine — Windows is stealing the hotkey. Run `.\disable-snipping.ps1` first.
 
 ### If nothing saves
 
-1. **Windows 11:** Settings → Accessibility → Keyboard → turn **OFF** *Use the Print screen key to open screen snipping*.
+1. **Windows 11:** run `.\disable-snipping.ps1` — or Settings → Bluetooth & devices → Keyboard → turn **OFF** *Use the Print screen key to open screen capture*.
 2. Close other screenshot tools (ShareX, Snipping Tool, etc.).
 3. Confirm FFmpeg path in `webpcap.ini` exists on disk.
 4. Run `.\verify.ps1` first — if that works but hotkeys fail, capture (not ffmpeg/ini) is the issue.
@@ -121,7 +122,9 @@ Hotkey-native Windows screenshots that land as `.webp` files and on the clipboar
 
 ## Version History
 
-v0.1.2 — **RunWait fix** (`RunWait(exe, args,,, "Hide")`) — hotkey capture/ffmpeg subprocesses actually run.
+v0.1.3 — **RunWait fix** (AHK v2: single `Target` string, not two-arg form) + `disable-snipping.ps1` + `$` hotkey hooks.
+
+v0.1.2 — RunWait comma attempt (still wrong in AHK v2).
 
 v0.1.1 — `verify.ps1`; `#UseHook`; PNG clipboard; `%TEMP%\webpcap.log`; Win11 snipping note; accurate error messages.
 
