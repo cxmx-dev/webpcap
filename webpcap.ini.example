@@ -1,11 +1,20 @@
 [paths]
 ; ffmpeg on PATH, or full path to ffmpeg.exe
 ffmpeg=ffmpeg.exe
-outdir=%USERPROFILE%\Pictures\Screenshots\WebP
+outdir=%USERPROFILE%\Pictures\Screenshots\webpcap CAPS
+; MP4 display + canvas recordings
+viddir=%USERPROFILE%\Videos\webpcap REC
 
 [encode]
 quality=90
 lossless=0
+
+[video]
+fps=30
+crf=23
+port=19787
+; display REC (Shift+PrtSc): system = speakers loopback into same MP4; off = silent
+audio=system
 
 [hotkeys]
 remap=1

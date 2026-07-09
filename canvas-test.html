@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>webpcap canvas test</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #111; color: #ccc; font: 14px/1.4 system-ui, sans-serif; }
+    main { display: grid; place-items: center; height: 100%; gap: 12px; }
+    canvas { background: #000; border-radius: 8px; box-shadow: 0 0 0 1px #333; }
+    p { opacity: 0.75; max-width: 36rem; text-align: center; }
+    kbd { background: #222; padding: 2px 6px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <main>
+    <canvas id="c" width="640" height="360"></canvas>
+    <p>
+      Largest <code>&lt;canvas&gt;</code> only (no browser chrome).<br />
+      Start video-host + daemon, then <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>PrtSc</kbd> twice (start / stop).
+    </p>
+  </main>
+  <script>
+    (function () {
+      var c = document.getElementById('c');
+      var g = c.getContext('2d');
+      var t0 = performance.now();
+      function frame(now) {
+        var t = (now - t0) / 1000;
+        g.fillStyle = '#0a0a12';
+        g.fillRect(0, 0, c.width, c.height);
+        g.save();
+        g.translate(c.width / 2, c.height / 2);
+        g.rotate(t * 0.9);
+        g.fillStyle = '#6cf';
+        g.fillRect(-80, -80, 160, 160);
+        g.restore();
+        g.fillStyle = '#fff';
+        g.font = '16px system-ui';
+        g.fillText('webpcap canvas test', 16, 28);
+        requestAnimationFrame(frame);
+      }
+      requestAnimationFrame(frame);
+    })();
+  </script>
+  <!-- Prefer host-served script when video-host is up; falls back to local file. -->
+  <script src="http://127.0.0.1:19787/webpcap-canvas.js"></script>
+  <script>
+    setTimeout(function () {
+      if (!window.__webpcapCanvas) {
+        var s = document.createElement('script');
+        s.src = 'webpcap-canvas.js';
+        document.body.appendChild(s);
+      }
+    }, 400);
+  </script>
+</body>
+</html>

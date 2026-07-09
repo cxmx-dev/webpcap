@@ -17,7 +17,7 @@ function Get-IniValue($file, $section, $key) {
 
 $ffmpeg = Get-IniValue $ini 'paths' 'ffmpeg'
 $outdir = [Environment]::ExpandEnvironmentVariables((Get-IniValue $ini 'paths' 'outdir'))
-if (-not $outdir) { $outdir = Join-Path $env:USERPROFILE 'Pictures\Screenshots\WebP' }
+if (-not $outdir) { $outdir = Join-Path $env:USERPROFILE 'Pictures\Screenshots\webpcap CAPS' }
 New-Item -ItemType Directory -Force -Path $outdir | Out-Null
 
 Write-Host "ffmpeg: $ffmpeg"

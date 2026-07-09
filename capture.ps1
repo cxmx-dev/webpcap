@@ -22,9 +22,11 @@ switch ($Mode) {
         $g.Dispose(); $b.Dispose()
     }
     'region' {
+        if ($W -lt 1 -or $H -lt 1) { throw "region size invalid W=$W H=$H" }
         $b = New-Object Drawing.Bitmap $W, $H
         $g = [Drawing.Graphics]::FromImage($b)
-        $g.CopyFromScreen($X, $Y, [Drawing.Point]::Empty, [Drawing.Size]::new($W, $H))
+        # int,int,int,int,Size — avoid Point/Size overload that PS misbinds to CopyPixelOperation
+        $g.CopyFromScreen([int]$X, [int]$Y, 0, 0, (New-Object Drawing.Size $W, $H))
         $b.Save($OutPath, [Drawing.Imaging.ImageFormat]::Png)
         $g.Dispose(); $b.Dispose()
     }
@@ -38,14 +40,15 @@ public class Win32 {
     public struct RECT { public int L, T, R, B; }
 }
 '@
-        Add-Type -TypeDefinition $code
+        if (-not ('Win32' -as [type])) { Add-Type -TypeDefinition $code }
         $hwnd = [Win32]::GetForegroundWindow()
         $rect = New-Object Win32+RECT
         [void][Win32]::GetWindowRect($hwnd, [ref]$rect)
-        $w = $rect.R - $rect.L; $ht = $rect.B - $rect.T
+        $w = [Math]::Max(1, $rect.R - $rect.L)
+        $ht = [Math]::Max(1, $rect.B - $rect.T)
         $b = New-Object Drawing.Bitmap $w, $ht
         $g = [Drawing.Graphics]::FromImage($b)
-        $g.CopyFromScreen($rect.L, $rect.T, [Drawing.Point]::Empty, [Drawing.Size]::new($w, $ht))
+        $g.CopyFromScreen([int]$rect.L, [int]$rect.T, 0, 0, (New-Object Drawing.Size $w, $ht))
         $b.Save($OutPath, [Drawing.Imaging.ImageFormat]::Png)
         $g.Dispose(); $b.Dispose()
     }

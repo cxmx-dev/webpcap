@@ -1,12 +1,16 @@
 # Run one capture without hotkeys — proves AHK pipeline works
 $ErrorActionPreference = 'Stop'
 $Root = $PSScriptRoot
-$Ahk = 'C:\Program Files\AutoHotkey\v2\AutoHotkey.exe'
+$Ahk = Join-Path ${env:ProgramFiles} 'AutoHotkey\v2\AutoHotkey.exe'
+if (-not (Test-Path $Ahk)) {
+    $Ahk86 = Join-Path ${env:ProgramFiles(x86)} 'AutoHotkey\v2\AutoHotkey.exe'
+    if (Test-Path $Ahk86) { $Ahk = $Ahk86 }
+}
 $script = Join-Path $Root 'webpcap.ahk'
 
 if (-not (Test-Path $Ahk)) { throw "AutoHotkey v2 not found: $Ahk" }
 
-$out = Join-Path $env:USERPROFILE 'Pictures\Screenshots\WebP'
+$out = Join-Path $env:USERPROFILE 'Pictures\Screenshots\webpcap CAPS'
 New-Item -ItemType Directory -Force -Path $out | Out-Null
 $before = (Get-ChildItem $out -Filter '*.webp' -ErrorAction SilentlyContinue).Count
 
