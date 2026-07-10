@@ -1,5 +1,7 @@
 # webpcap
 
+**Device:** local **Windows desktop** tool (AHK + FFmpeg). Not a mobile web app. Browser helpers (`canvas-test.html`, canvas REC hook) still use a normal viewport when opened in a browser on any device for preview — capture itself requires this Windows host.
+
 ## How to run
 
 ### Start
@@ -43,7 +45,9 @@ Avoids OS traps: **not** `Alt`+`Shift`+`PrtSc` (High Contrast), **not** `Win`+`A
 
 Same REC hotkey again also stops. Canvas helper is **parked** (not on the main map).
 
-**Region UX:** cyan frame while dragging; after release, drag edges/corners/move the box; **`Enter`** confirms; **`Esc`** cancels.
+**While any REC is active:** a **blinking red disc** sits on the primary **taskbar**, **just left of the overflow chevron (`^`)** (left of the system-tray / clock cluster). Short toast on start (~2s); **`End`** (or same REC hotkey) stops and clears the indicator. Tweak horizontal pad via `recDotFromRight` in `webpcap.ahk` (`ShowRecDot`) if DPI/tray density shifts the chevron.
+
+**Region UX:** cyan frame while dragging; after release, drag edges/corners/move the box; **`Enter`** **starts** region REC (or confirms region CAPS still); **`Esc`** cancels. Drag alone does not record video until **Enter**.
 
 ### Which REC mode?
 
@@ -96,13 +100,14 @@ Docs never use a machine username or drive letter — clone works the same on an
 
 - **Stills:** real WebP on disk; **Ctrl+V** pastes PNG (clipboard). Region CAP = rubber-band + fine-tune + `Enter`.
 - **All REC MP4s:** **video + system audio** in **one file** (WASAPI loopback). Quiet audio if nothing is playing is OK.
+- **REC status:** blinking red taskbar overlay for **all** modes (full / window / region), placed **just left of `^`**; icons under `assets/rec-on.ico` / `rec-off.ico`. Start toast auto-hides (~2s) so it is not burned into full-display grabs.
 - **Full / window / region** use gdigrab (crop for window/region). Window bounds use **DWM visible frame** (avoids Win11 shadow offsets that broke gdigrab). Coords = virtual desktop.
 - **Games / Game Bar:** prefer borderless windowed for window REC; full or region REC for exclusive fullscreen. Do not steal `Win`+`G`.
 - **Canvas helper** remains in the repo for demos but is **parked** off the main hotkey map.
 - Override in `webpcap.ini` (gitignored): `outdir`, `viddir`, `audio` = `system` \| `off`.
 
 **Stop daemon:** Task Manager → end `AutoHotkey64.exe` (and the hidden PowerShell `video-host` if needed).  
-**Debug:** `.\test_hotkeys.ps1` or `webpcap.ahk --debug` (tooltips + tray icon).
+**Debug:** `.\test_hotkeys.ps1` or `webpcap.ahk --debug` (tooltips + visible tray icon). Logs: `%TEMP%\webpcap.log`, `%TEMP%\webpcap-video.log`.
 
 ---
 
@@ -228,8 +233,17 @@ Hotkey-native Windows stills and video: GDI to WebP; full / window / region desk
 
 ## Version History
 
+71026 3:32:25:89 AM CST
+• **REC dot position:** taskbar indicator moved **just left of the overflow chevron (`^`)** (`recDotFromRight` 228; was `R-118` / sat on wifi–clock). Daemon reloaded. Nudge pad in `ShowRecDot` if tray layout shifts.
+
+71026 3:28:13:94 AM CST
+• **REC status + region reliability:** blinking red taskbar indicator for **all** REC modes (full / window / region); short start toast (~2s). Region REC requires **Enter** after rubber-band (same shared picker as CAPS). PrtSc multi-mod combos via `HotIf` (fixes Ctrl+Alt collapsing to CAPS still). Assets: `assets/rec-on.ico`, `assets/rec-off.ico`. `build.ps1` prefers AutoHotkey64. User-verified: all 3 REC modes + region rubber-band.
+
+70826 7:41:19:05 PM CST
+• **Live on GitHub:** `main` `6d456f3` — REC A/V, hotkeys, rubber-band region. Public set only; private docs stayed gitignored.
+
 70826 7:21:50:09 PM CST
-• **Pre-push privacy:** public `.md` = `README.md` only (`%USERPROFILE%` paths). Gitignored private set confirmed (`USER-*.md`, ini, NOTES/PLAN/dev/convo/iteration-log). AHK launcher uses `$env:ProgramFiles` (no machine username). Ready for `git push`.
+• **Pre-push privacy:** public `.md` = `README.md` only (`%USERPROFILE%` paths). Gitignored private set confirmed (`USER-*.md`, ini, NOTES/PLAN/dev/convo/iteration-log). AHK launcher uses `$env:ProgramFiles` (no machine username).
 
 70826 7:14:42:90 PM CST
 • **Window REC User-verified** (A+V): `Ctrl+Win+PrtSc` → `Window_*.mp4` with system audio. Docs: **Which REC mode?** (full vs window vs region) — window = focused app only (e.g. browser/Twitch without desktop clutter).
