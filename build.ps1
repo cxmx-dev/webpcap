@@ -1,12 +1,14 @@
 # webpcap v0.2 — start video-host + AHK daemon
 $ErrorActionPreference = 'Stop'
 $Root = $PSScriptRoot
-$Ahk = Join-Path ${env:ProgramFiles} 'AutoHotkey\v2\AutoHotkey.exe'
-if (-not (Test-Path $Ahk)) {
-    $Ahk86 = Join-Path ${env:ProgramFiles(x86)} 'AutoHotkey\v2\AutoHotkey.exe'
-    if (Test-Path $Ahk86) { $Ahk = $Ahk86 }
-}
-if (-not (Test-Path $Ahk)) {
+$AhkCandidates = @(
+    (Join-Path ${env:ProgramFiles} 'AutoHotkey\v2\AutoHotkey64.exe'),
+    (Join-Path ${env:ProgramFiles} 'AutoHotkey\v2\AutoHotkey.exe'),
+    (Join-Path ${env:ProgramFiles(x86)} 'AutoHotkey\v2\AutoHotkey64.exe'),
+    (Join-Path ${env:ProgramFiles(x86)} 'AutoHotkey\v2\AutoHotkey.exe')
+)
+$Ahk = $AhkCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+if (-not $Ahk) {
     Write-Error "AutoHotkey v2 not found under Program Files. Install AHK v2 or edit build.ps1."
     exit 1
 }

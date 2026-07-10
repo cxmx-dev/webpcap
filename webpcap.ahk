@@ -10,6 +10,10 @@ global PSHELL := A_WinDir "\System32\WindowsPowerShell\v1.0\powershell.exe"
 global SelectingRegion := false
 global RbTop := 0, RbBot := 0, RbLeft := 0, RbRight := 0
 global RbLabel := 0
+global RecBlinking := false, RecBlinkShow := true
+global RecDotGui := 0
+global IcoRecOn := A_ScriptDir "\assets\rec-on.ico"
+global IcoRecOff := A_ScriptDir "\assets\rec-off.ico"
 
 CoordMode "Mouse", "Screen"
 CoordMode "ToolTip", "Screen"
@@ -32,31 +36,49 @@ if (testMode) {
     ExitApp(0)
 }
 
+; Idle: quiet tray. While REC: red blink tray + on-screen red dot (near tray).
+A_IconTip := "webpcap"
+TrayRestoreIdle()
+
 #InputLevel 1
 if (REMAP) {
-    ; --- CAPS (stills) ---
-    Hotkey "$PrintScreen", (*) => Go("full"), "On"
-    Hotkey "$SC137", (*) => Go("full"), "On"
-    Hotkey "$!PrintScreen", (*) => CapHotkeyActive(), "On"
-    Hotkey "$!SC137", (*) => CapHotkeyActive(), "On"
-    Hotkey "$^PrintScreen", (*) => CapHotkeyRegion(), "On"
-    Hotkey "$^SC137", (*) => CapHotkeyRegion(), "On"
+    ; HotIf + *PrtSc: PrtSc often drops multi-mod combos when using only $^! style hotkeys.
+    ; That bug turned Ctrl+Alt+PrtSc into CAPS region (webp) → End said "nothing recording".
 
-    ; --- REC ---
-    ; Ctrl+Shift+PrtSc = full display
-    Hotkey "$^+PrintScreen", (*) => VidToggle("display"), "On"
-    Hotkey "$^+SC137", (*) => VidToggle("display"), "On"
-    ; Ctrl+Win+PrtSc = active window (NOT Win+Alt+PrtSc = Game Bar screenshot)
-    Hotkey "$^#PrintScreen", (*) => VidToggle("window"), "On"
-    Hotkey "$^#SC137", (*) => VidToggle("window"), "On"
-    ; Ctrl+Alt+PrtSc = region REC
-    Hotkey "$^!PrintScreen", (*) => VidToggle("region"), "On"
-    Hotkey "$^!SC137", (*) => VidToggle("region"), "On"
+    ; REC: Ctrl+Shift+PrtSc = full display
+    HotIf (*) => GetKeyState("Control", "P") && GetKeyState("Shift", "P") && !GetKeyState("Alt", "P")
+    Hotkey "*PrintScreen", (*) => VidToggle("display"), "On"
+    Hotkey "*SC137", (*) => VidToggle("display"), "On"
+
+    ; REC: Ctrl+Win+PrtSc = window
+    HotIf (*) => GetKeyState("Control", "P") && (GetKeyState("LWin", "P") || GetKeyState("RWin", "P")) && !GetKeyState("Shift", "P") && !GetKeyState("Alt", "P")
+    Hotkey "*PrintScreen", (*) => VidToggle("window"), "On"
+    Hotkey "*SC137", (*) => VidToggle("window"), "On"
+
+    ; REC: Ctrl+Alt+PrtSc = region video
+    HotIf (*) => GetKeyState("Control", "P") && GetKeyState("Alt", "P") && !GetKeyState("Shift", "P")
+    Hotkey "*PrintScreen", (*) => VidToggle("region"), "On"
+    Hotkey "*SC137", (*) => VidToggle("region"), "On"
+
+    ; CAPS: Ctrl+PrtSc only = region still
+    HotIf (*) => GetKeyState("Control", "P") && !GetKeyState("Alt", "P") && !GetKeyState("Shift", "P") && !GetKeyState("LWin", "P") && !GetKeyState("RWin", "P")
+    Hotkey "*PrintScreen", (*) => Go("region"), "On"
+    Hotkey "*SC137", (*) => Go("region"), "On"
+
+    ; CAPS: Alt+PrtSc = active window (no Ctrl)
+    HotIf (*) => GetKeyState("Alt", "P") && !GetKeyState("Control", "P") && !GetKeyState("Shift", "P") && !GetKeyState("LWin", "P") && !GetKeyState("RWin", "P")
+    Hotkey "*PrintScreen", (*) => Go("active"), "On"
+    Hotkey "*SC137", (*) => Go("active"), "On"
+
+    ; CAPS: PrtSc alone = full desktop
+    HotIf (*) => !GetKeyState("Control", "P") && !GetKeyState("Alt", "P") && !GetKeyState("Shift", "P") && !GetKeyState("LWin", "P") && !GetKeyState("RWin", "P")
+    Hotkey "*PrintScreen", (*) => Go("full"), "On"
+    Hotkey "*SC137", (*) => Go("full"), "On"
+
+    HotIf()
 
     Hotkey "End", (*) => VidStop(), "On"
 }
-if (DBG)
-    TraySetIcon("imageres.dll", 67)
 Persistent
 
 LoadIni() {
@@ -84,23 +106,11 @@ ExpandEnvPath(p) {
     }
 }
 
-CapHotkeyActive() {
-    if (GetKeyState("Shift", "P") || GetKeyState("Control", "P") || GetKeyState("LWin", "P") || GetKeyState("RWin", "P"))
-        return
-    Go("active")
-}
-
-CapHotkeyRegion() {
-    ; leave Ctrl+Shift / Ctrl+Alt / Ctrl+Win to REC
-    if (GetKeyState("Shift", "P") || GetKeyState("Alt", "P") || GetKeyState("LWin", "P") || GetKeyState("RWin", "P"))
-        return
-    Go("region")
-}
-
 Go(mode) {
     global OUT, DBG, FFMPEG, SelectingRegion
     if (SelectingRegion)
         return
+    Log("CAPS " mode)
     ts := FormatTime(, "yyyyMMdd_HHmmss") "_" A_TickCount
     png := A_Temp "\webpcap_" ts ".png"
     webp := OUT "\Screenshot_" ts ".webp"
@@ -119,31 +129,43 @@ Go(mode) {
 ; --- REC API ---
 VidToggle(mode) {
     global VIDPORT, SelectingRegion
+    static busy := false
+    if (busy)
+        return
     if (SelectingRegion && mode != "region")
         return
 
-    st := HttpGet("http://127.0.0.1:" VIDPORT "/health")
-    if (st != "" && (InStr(st, '"displayRecording":true') || InStr(st, '"displayRecording": true'))) {
-        return VidStop()
-    }
+    busy := true
+    try {
+        Log("REC toggle " mode)
+        st := HttpGet("http://127.0.0.1:" VIDPORT "/health")
+        if (st = "") {
+            return Tip("video-host offline - run .\build.ps1", 4000)
+        }
+        if (InStr(st, '"displayRecording":true') || InStr(st, '"displayRecording": true')) {
+            return VidStop()
+        }
 
-    if (mode = "display") {
-        body := HttpPost("http://127.0.0.1:" VIDPORT "/display/toggle")
-        return VidTipFromBody(body, "display")
-    }
-    if (mode = "window") {
-        ; Visible frame (not WinGetPos shadow offsets — those were -8,-8 and broke gdigrab)
-        if (!GetActiveVisibleRect(&wx, &wy, &ww, &wh))
-            return Tip("could not read active window bounds", 3000)
-        if (ww < 16 || wh < 16)
-            return Tip("window too small to REC", 2500)
-        ww := ww - (ww & 1), wh := wh - (wh & 1)
-        url := "http://127.0.0.1:" VIDPORT "/window/toggle?x=" wx "&y=" wy "&w=" ww "&h=" wh
-        body := HttpPost(url)
-        return VidTipFromBody(body, "window")
-    }
-    if (mode = "region") {
-        return VidRegionStart()
+        if (mode = "display") {
+            body := HttpPost("http://127.0.0.1:" VIDPORT "/display/toggle")
+            return VidTipFromBody(body, "display")
+        }
+        if (mode = "window") {
+            ; Visible frame (not WinGetPos shadow offsets — those were -8,-8 and broke gdigrab)
+            if (!GetActiveVisibleRect(&wx, &wy, &ww, &wh))
+                return Tip("could not read active window bounds", 3000)
+            if (ww < 16 || wh < 16)
+                return Tip("window too small to REC", 2500)
+            ww := ww - (ww & 1), wh := wh - (wh & 1)
+            url := "http://127.0.0.1:" VIDPORT "/window/toggle?x=" wx "&y=" wy "&w=" ww "&h=" wh
+            body := HttpPost(url)
+            return VidTipFromBody(body, "window")
+        }
+        if (mode = "region") {
+            return VidRegionStart()
+        }
+    } finally {
+        busy := false
     }
 }
 
@@ -152,18 +174,23 @@ VidRegionStart() {
     if (SelectingRegion)
         return
     SelectingRegion := true
-    Tip("region REC: drag box  |  Esc cancel", 0)
-    ok := SelectRegionInteractive(&x, &y, &w, &h)
+    Tip("region REC VIDEO: drag box  |  Esc cancel", 0)
+    ok := SelectRegionInteractive(&x, &y, &w, &h, true)
     SelectingRegion := false
     HideRubber()
     ToolTip
-    if (!ok)
+    if (!ok) {
+        Log("region REC cancelled by user")
         return Tip("region REC cancelled", 1500)
+    }
     w := w - (w & 1), h := h - (h & 1)
     if (w < 16 || h < 16)
         return Tip("region too small", 2500)
+    Tip("starting region REC...", 0)
     url := "http://127.0.0.1:" VIDPORT "/region/toggle?x=" x "&y=" y "&w=" w "&h=" h
+    Log("region REC post " x "," y " " w "x" h)
     body := HttpPost(url)
+    Log("region REC response: " (body = "" ? "(empty)" : SubStr(body, 1, 180)))
     return VidTipFromBody(body, "region")
 }
 
@@ -172,14 +199,17 @@ VidStop() {
     body := HttpPost("http://127.0.0.1:" VIDPORT "/rec/stop")
     if (body = "") {
         Log("video-host not reachable on port " VIDPORT)
+        RecIndicatorStop()
         return Tip("video-host offline - run .\build.ps1", 4000)
     }
     if (InStr(body, '"stopped":false') || InStr(body, '"stopped": false')) {
+        RecIndicatorStop()  ; clear stuck red dot if host already idle
         if (InStr(body, "nothing_recording"))
-            return Tip("nothing recording", 1200)
+            return Tip("nothing recording (REC never started — need Enter after rubber-band)", 2800)
         return Tip("stop: nothing active", 1200)
     }
     ok := InStr(body, '"ok":true') || InStr(body, '"ok": true')
+    RecIndicatorStop()
     if (ok)
         Tip(DBG ? "REC saved -> " VIDDIR : "REC saved (video+audio .mp4)", DBG ? 0 : 2500)
     else
@@ -190,21 +220,177 @@ VidTipFromBody(body, mode) {
     global DBG, VIDDIR, VIDPORT
     if (body = "") {
         Log("video-host not reachable on port " VIDPORT)
+        RecIndicatorStop()
         return Tip("video-host offline - run .\build.ps1", 4000)
     }
     rec := InStr(body, '"recording":true') || InStr(body, '"recording": true')
     ok := InStr(body, '"ok":true') || InStr(body, '"ok": true')
     if (rec) {
+        ; All video REC modes share the same red indicator
         label := mode = "display" ? "full display" : mode = "window" ? "window" : "region"
-        Tip(label " REC (+audio)... End or same hotkey to stop", 0)
+        RecIndicatorStart(label)
+        Tip(label " REC on (+audio)  |  End to stop", 2500)
         return
     }
+    RecIndicatorStop()
     if (ok)
         Tip(DBG ? "REC saved -> " VIDDIR : "REC saved (video+audio .mp4)", DBG ? 0 : 2500)
     else if (InStr(body, "ffmpeg exited") || InStr(body, "bad crop"))
         Tip("REC failed: bad window crop - try region REC or borderless window", 4500)
-    else
+    else {
+        Log("REC fail body: " SubStr(body, 1, 240))
         Tip("REC failed - see webpcap-video.log", 4000)
+    }
+}
+
+; --- REC indicator: on-screen red blink (above taskbar, tray corner) + tray icon ---
+; Blink uses opacity (not Hide) so a stuck "hidden" phase can't make the dot vanish forever.
+TrayRestoreIdle() {
+    global DBG, RecBlinking, RecBlinkShow
+    try SetTimer(RecBlinkTick, 0)
+    RecBlinking := false
+    RecBlinkShow := true
+    HideRecDot()
+    A_IconTip := "webpcap"
+    if (DBG) {
+        A_IconHidden := false
+        try TraySetIcon("imageres.dll", 67)
+        return
+    }
+    A_IconHidden := true
+}
+
+RecIndicatorStart(modeLabel := "REC") {
+    global RecBlinking, RecBlinkShow, IcoRecOn
+    ; Always re-arm (do not early-return) — stuck RecBlinking used to skip show forever
+    try SetTimer(RecBlinkTick, 0)
+    RecBlinking := true
+    RecBlinkShow := true
+    A_IconHidden := false
+    A_IconTip := "webpcap " modeLabel " REC — End to stop"
+    if (FileExist(IcoRecOn)) {
+        try TraySetIcon(IcoRecOn)
+    } else {
+        try TraySetIcon("imageres.dll", 100)
+    }
+    ShowRecDot(true)
+    SetTimer(RecBlinkTick, 500)
+    Log("REC indicator on (" modeLabel ")")
+}
+
+RecIndicatorStop() {
+    global RecBlinking
+    try SetTimer(RecBlinkTick, 0)
+    RecBlinking := false
+    HideRecDot()
+    TrayRestoreIdle()
+    Log("REC indicator off")
+}
+
+RecTrayBlinkStart(modeLabel := "REC") {
+    RecIndicatorStart(modeLabel)
+}
+RecTrayBlinkStop() {
+    RecIndicatorStop()
+}
+
+RecBlinkTick() {
+    global RecBlinking, RecBlinkShow, IcoRecOn, IcoRecOff
+    if (!RecBlinking)
+        return
+    RecBlinkShow := !RecBlinkShow
+    ; Opacity blink — window stays mapped (never Hide on "off" phase)
+    ShowRecDot(true, RecBlinkShow ? 255 : 70)
+    if (RecBlinkShow) {
+        A_IconHidden := false
+        if (FileExist(IcoRecOn)) {
+            try TraySetIcon(IcoRecOn)
+        }
+    } else if (FileExist(IcoRecOff)) {
+        A_IconHidden := false
+        try TraySetIcon(IcoRecOff)
+    } else {
+        A_IconHidden := true
+    }
+}
+
+EnsureRecDot() {
+    global RecDotGui
+    if (RecDotGui) {
+        try {
+            if (WinExist("ahk_id " RecDotGui.Hwnd))
+                return
+        } catch {
+        }
+        try RecDotGui.Destroy()
+        RecDotGui := 0
+    }
+    ; Click-through red disc, topmost — no +Owner (can orphan under wrong parent)
+    g := Gui("+AlwaysOnTop -Caption +ToolWindow +E0x20 +E0x08000000")
+    g.BackColor := "FF1A1A"
+    g.MarginX := 0
+    g.MarginY := 0
+    g.Show("x0 y0 w22 h22 NoActivate Hide")
+    hwnd := g.Hwnd
+    hRgn := DllCall("CreateEllipticRgn", "int", 0, "int", 0, "int", 22, "int", 22, "ptr")
+    if (hRgn)
+        DllCall("SetWindowRgn", "ptr", hwnd, "ptr", hRgn, "int", 1)
+    try WinSetTransparent(255, g)
+    try WinSetAlwaysOnTop(true, g)
+    RecDotGui := g
+}
+
+; visible=true shows; alpha 0-255. When visible=false, hide completely (stop only).
+; Position: ON the primary taskbar, just left of the overflow chevron (^).
+; Measured on 2560-wide primary: ^ ~180px from right; R-118 sat on wifi/clock (too far right).
+ShowRecDot(visible := true, alpha := 255) {
+    global RecDotGui
+    EnsureRecDot()
+    if (!visible) {
+        try RecDotGui.Hide()
+        return
+    }
+    mon := MonitorGetPrimary()
+    MonitorGet(mon, &L, &T, &R, &B)
+    MonitorGetWorkArea(mon, &wL, &wT, &wR, &wB)
+    ; Taskbar band height (bottom bar). Fallback if auto-hide / odd layout.
+    tbH := B - wB
+    if (tbH < 28)
+        tbH := 48
+    if (tbH > 80)
+        tbH := 48
+    dot := 22
+    ; Just left of ^ (hidden-icons chevron). 22px disc + small gap before chevron.
+    ; Tweak RecDotFromRight if tray icon count / DPI moves the chevron.
+    recDotFromRight := 228
+    x := R - recDotFromRight
+    y := B - tbH + ((tbH - dot) // 2)
+    if (x < L)
+        x := L + 4
+    if (y < T)
+        y := B - dot - 4
+    try {
+        RecDotGui.Show("x" x " y" y " w" dot " h" dot " NoActivate")
+        try WinSetAlwaysOnTop(true, RecDotGui)
+        a := alpha < 40 ? 40 : (alpha > 255 ? 255 : alpha)
+        try WinSetTransparent(a, RecDotGui)
+    } catch as e {
+        Log("ShowRecDot fail: " e.Message)
+        RecDotGui := 0
+        EnsureRecDot()
+        try {
+            RecDotGui.Show("x" x " y" y " w" dot " h" dot " NoActivate")
+            try WinSetTransparent(255, RecDotGui)
+        } catch {
+        }
+    }
+}
+
+HideRecDot() {
+    global RecDotGui
+    if (RecDotGui) {
+        try RecDotGui.Hide()
+    }
 }
 
 HttpGet(url) {
@@ -321,9 +507,10 @@ GetActiveVisibleRect(&x, &y, &w, &h) {
 ; --- Rubber-band + fine-tune region picker ---
 ; 1) LMB drag frame (live cyan border)
 ; 2) Mouse-up -> fine-tune: drag edges/corners/move, Enter=OK, Esc=cancel
-SelectRegionInteractive(&x, &y, &w, &h) {
+SelectRegionInteractive(&x, &y, &w, &h, forRec := false) {
     x1 := 0, y1 := 0, started := false
     EnsureRubber()
+    conf := forRec ? "Enter=START REC" : "Enter=OK"
 
     ; Phase 1: drag
     Loop {
@@ -355,8 +542,8 @@ SelectRegionInteractive(&x, &y, &w, &h) {
         Sleep 15
     }
 
-    ; Phase 2: fine-tune
-    Tip("fine-tune: drag edges/corners  |  Enter=OK  Esc=cancel", 0)
+    ; Phase 2: fine-tune — Enter starts capture / REC (drag alone does not record yet)
+    Tip("fine-tune: drag edges  |  " conf "  Esc=cancel", 0)
     grip := ""
     gx0 := 0, gy0 := 0, bx := x, by := y, bw := w, bh := h
     Loop {
@@ -364,8 +551,12 @@ SelectRegionInteractive(&x, &y, &w, &h) {
             HideRubber()
             return false
         }
-        if (GetKeyState("Enter", "P")) {
-            KeyWait "Enter"
+        ; Main Enter or Numpad Enter
+        if (GetKeyState("Enter", "P") || GetKeyState("NumpadEnter", "P")) {
+            if (GetKeyState("Enter", "P"))
+                KeyWait "Enter"
+            if (GetKeyState("NumpadEnter", "P"))
+                KeyWait "NumpadEnter"
             if (w >= 2 && h >= 2) {
                 HideRubber()
                 return true
@@ -393,7 +584,7 @@ SelectRegionInteractive(&x, &y, &w, &h) {
         }
 
         hint := zone != "" ? zone : "·"
-        Tip("fine-tune " w "x" h "  [" hint "]  Enter=OK  Esc=cancel", 0)
+        Tip("fine-tune " w "x" h "  [" hint "]  " conf "  Esc=cancel", 0)
         Sleep 15
     }
 }

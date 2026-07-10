@@ -1,9 +1,10 @@
-*.exe
+﻿*.exe
 *.png
 *.webp
 _project.ps1
 start.ps1
 webpcap_convo.md
+*convo*
 iteration-log.md
 PLAN.md
 NOTES.md
@@ -11,7 +12,10 @@ README.dev.md
 USER-*.md
 webpcap.ini
 docs/
+pics/
 *.log
 webpcap.log
 Thumbs.db
 desktop.ini
+
+disable-snipping.ps1
