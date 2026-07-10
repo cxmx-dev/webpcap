@@ -2,6 +2,8 @@
 
 **Device:** local **Windows desktop** tool (AHK + FFmpeg). Not a mobile web app. Browser helpers (`canvas-test.html`, canvas REC hook) still use a normal viewport when opened in a browser on any device for preview — capture itself requires this Windows host.
 
+**Hub batch push:** from GitHub-Repo-Helper root, `.\scripts\start-all.ps1` syncs this repo without launching the daemon (`-SyncOnly`).
+
 ## How to run
 
 ### Start
@@ -232,6 +234,9 @@ Hotkey-native Windows stills and video: GDI to WebP; full / window / region desk
 *webpcap* is a media pipeline micro-tool: PrtSc-family stills as WebP; full / window / region REC with system audio in one MP4 — Clipchamp-like drag framing (rubber-band + fine-tune) without a heavy UI, without fighting Game Bar or High Contrast shortcuts.
 
 ## Version History
+
+71026 2:49:40:70 PM CST
+• **`update .mds`:** device scope (Windows desktop); hub **`start-all.ps1`** / `-SyncOnly` batch push without launching daemon.
 
 71026 3:32:25:89 AM CST
 • **REC dot position:** taskbar indicator moved **just left of the overflow chevron (`^`)** (`recDotFromRight` 228; was `R-118` / sat on wifi–clock). Daemon reloaded. Nudge pad in `ShowRecDot` if tray layout shifts.
