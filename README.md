@@ -47,7 +47,7 @@ Avoids OS traps: **not** `Alt`+`Shift`+`PrtSc` (High Contrast), **not** `Win`+`A
 
 Same REC hotkey again also stops. Canvas helper is **parked** (not on the main map).
 
-**While any REC is active:** a **blinking red disc** sits on the primary **taskbar**, **just left of the overflow chevron (`^`)** (left of the system-tray / clock cluster). Short toast on start (~2s); **`End`** (or same REC hotkey) stops and clears the indicator. Tweak horizontal pad via `recDotFromRight` in `webpcap.ahk` (`ShowRecDot`) if DPI/tray density shifts the chevron.
+**While any REC is active:** a **blinking red disc** sits on the primary **taskbar**, **just left of the overflow chevron (`^`)** (left of the system-tray / clock cluster) so **you** see recording status. The disc uses Windows **`WDA_EXCLUDEFROMCAPTURE`** — visible on screen, **not** burned into full / window / region MP4 output (gdigrab). Short toast on start (~2s); **`End`** (or same REC hotkey) stops and clears the indicator. Tweak horizontal pad via `recDotFromRight` in `webpcap.ahk` (`ShowRecDot`) if DPI/tray density shifts the chevron.
 
 **Region UX:** cyan frame while dragging; after release, drag edges/corners/move the box; **`Enter`** **starts** region REC (or confirms region CAPS still); **`Esc`** cancels. Drag alone does not record video until **Enter**.
 
@@ -102,7 +102,7 @@ Docs never use a machine username or drive letter — clone works the same on an
 
 - **Stills:** real WebP on disk; **Ctrl+V** pastes PNG (clipboard). Region CAP = rubber-band + fine-tune + `Enter`.
 - **All REC MP4s:** **video + system audio** in **one file** (WASAPI loopback). Quiet audio if nothing is playing is OK.
-- **REC status:** blinking red taskbar overlay for **all** modes (full / window / region), placed **just left of `^`**; icons under `assets/rec-on.ico` / `rec-off.ico`. Start toast auto-hides (~2s) so it is not burned into full-display grabs.
+- **REC status:** blinking red taskbar overlay for **all** modes (full / window / region), placed **just left of `^`**; icons under `assets/rec-on.ico` / `rec-off.ico`. Disc is **user-visible only** (`SetWindowDisplayAffinity` / `WDA_EXCLUDEFROMCAPTURE` in `webpcap.ahk`) — not in the video file. Start toast auto-hides (~2s).
 - **Full / window / region** use gdigrab (crop for window/region). Window bounds use **DWM visible frame** (avoids Win11 shadow offsets that broke gdigrab). Coords = virtual desktop.
 - **Games / Game Bar:** prefer borderless windowed for window REC; full or region REC for exclusive fullscreen. Do not steal `Win`+`G`.
 - **Canvas helper** remains in the repo for demos but is **parked** off the main hotkey map.
@@ -124,7 +124,7 @@ Optional path for **your** demos only (not bound to a main hotkey right now). Re
 
 If the tooltip says **NO helper**, the hotkey only flipped a flag on the host — **no `Canvas_*.mp4` will be created**.
 
-### Easiest test
+### Easiest test (demo page + main REC)
 
 ```powershell
 cd path\to\webpcap
@@ -132,7 +132,16 @@ cd path\to\webpcap
 .\open-canvas-test.ps1
 ```
 
-Then: with host up and helper ready, canvas REC is **parked** off the main hotkey map (see source / prior API). Prefer **region REC** (`Ctrl+Alt+PrtSc`) for framed clips with audio.
+Opens a spinning-canvas demo. **Record with the main map** (not a canvas-only hotkey):
+
+| Key | Mode | Output |
+|-----|------|--------|
+| `Ctrl`+`Shift`+`PrtSc` | Full display | `Display_*.mp4` |
+| `Ctrl`+`Win`+`PrtSc` | Active window | `Window_*.mp4` |
+| `Ctrl`+`Alt`+`PrtSc` | Region | `Region_*.mp4` |
+| `End` | Stop | — |
+
+**Do not use** `Alt`+`Shift`+`PrtSc` (Windows High Contrast; old canvas toggle removed). Pure `Canvas_*.mp4` helper REC stays **parked**. On-screen red REC disc is excluded from capture.
 
 ### Inject on any demo page
 
@@ -234,6 +243,12 @@ Hotkey-native Windows stills and video: GDI to WebP; full / window / region desk
 *webpcap* is a media pipeline micro-tool: PrtSc-family stills as WebP; full / window / region REC with system audio in one MP4 — Clipchamp-like drag framing (rubber-band + fine-tune) without a heavy UI, without fighting Game Bar or High Contrast shortcuts.
 
 ## Version History
+
+71226 5:25:52:73 PM CST
+• **`update .mds`:** canvas demo copy aligned with main REC map — `open-canvas-test.ps1`, `canvas-test.html`, `webpcap-canvas.js` no longer say Alt+Shift+PrtSc (High Contrast trap / parked canvas toggle). Demo page → use Ctrl+Shift / Win / Alt+PrtSc. **User-verified:** full display REC on canvas-test; red REC disc **absent from MP4** (capture-exclude works).
+
+71226 5:20:36:51 PM CST
+• **REC indicator not in video:** blinking red taskbar disc still shows while recording; excluded from capture via `SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)` so full / window / region MP4s no longer include the light. Tray blink unchanged. Requires Windows 10 2004+.
 
 71026 2:49:40:70 PM CST
 • **`update .mds`:** device scope (Windows desktop); hub **`start-all.ps1`** / `-SyncOnly` batch push without launching daemon.

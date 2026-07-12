@@ -4,10 +4,13 @@
  *
  * Load on the demo page (while host is running):
  *   <script src="http://127.0.0.1:19787/webpcap-canvas.js"></script>
- * Or open canvas-test.html from this repo, or run .\open-canvas-test.ps1
- * Toggle: Alt+Shift+PrtSc (start / stop).
+ * Or open canvas-test.html / .\open-canvas-test.ps1
  *
- * Console must show: [webpcap] canvas helper ready
+ * STATUS: parked — no main-map hotkey. Prefer display / window / region REC:
+ *   Ctrl+Shift+PrtSc | Ctrl+Win+PrtSc | Ctrl+Alt+PrtSc | End
+ * Do not use Alt+Shift+PrtSc (Windows High Contrast; old toggle removed).
+ *
+ * Console: [webpcap] canvas helper ready
  */
 (function () {
   if (window.__webpcapCanvas) return;
@@ -217,5 +220,5 @@
   }
 
   setInterval(tick, 350);
-  console.info('[webpcap] canvas helper ready → ' + BASE + '  (Alt+Shift+PrtSc to rec)');
+  console.info('[webpcap] canvas helper ready → ' + BASE + '  (parked; use Ctrl+Shift/Win/Alt+PrtSc for main REC)');
 })();

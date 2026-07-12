@@ -314,12 +314,23 @@ RecBlinkTick() {
     }
 }
 
+; Keep REC disc on-screen for the user, but omit it from gdigrab / BitBlt / Desktop Duplication.
+; WDA_EXCLUDEFROMCAPTURE = 0x11 (Windows 10 2004+). Fails silently on older OS.
+ExcludeRecDotFromCapture(hwnd) {
+    if (!hwnd)
+        return
+    static WDA_EXCLUDEFROMCAPTURE := 0x11
+    try DllCall("user32\SetWindowDisplayAffinity", "ptr", hwnd, "uint", WDA_EXCLUDEFROMCAPTURE)
+}
+
 EnsureRecDot() {
     global RecDotGui
     if (RecDotGui) {
         try {
-            if (WinExist("ahk_id " RecDotGui.Hwnd))
+            if (WinExist("ahk_id " RecDotGui.Hwnd)) {
+                ExcludeRecDotFromCapture(RecDotGui.Hwnd)
                 return
+            }
         } catch {
         }
         try RecDotGui.Destroy()
@@ -337,6 +348,7 @@ EnsureRecDot() {
         DllCall("SetWindowRgn", "ptr", hwnd, "ptr", hRgn, "int", 1)
     try WinSetTransparent(255, g)
     try WinSetAlwaysOnTop(true, g)
+    ExcludeRecDotFromCapture(hwnd)
     RecDotGui := g
 }
 
@@ -372,6 +384,7 @@ ShowRecDot(visible := true, alpha := 255) {
     try {
         RecDotGui.Show("x" x " y" y " w" dot " h" dot " NoActivate")
         try WinSetAlwaysOnTop(true, RecDotGui)
+        ExcludeRecDotFromCapture(RecDotGui.Hwnd)
         a := alpha < 40 ? 40 : (alpha > 255 ? 255 : alpha)
         try WinSetTransparent(a, RecDotGui)
     } catch as e {
@@ -380,6 +393,7 @@ ShowRecDot(visible := true, alpha := 255) {
         EnsureRecDot()
         try {
             RecDotGui.Show("x" x " y" y " w" dot " h" dot " NoActivate")
+            ExcludeRecDotFromCapture(RecDotGui.Hwnd)
             try WinSetTransparent(255, RecDotGui)
         } catch {
         }
