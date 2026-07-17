@@ -10,6 +10,7 @@ global PSHELL := A_WinDir "\System32\WindowsPowerShell\v1.0\powershell.exe"
 global SelectingRegion := false
 global RbTop := 0, RbBot := 0, RbLeft := 0, RbRight := 0
 global RbLabel := 0
+global PickShield := 0   ; full-screen click sink during region pick (stops text selection under cursor)
 global RecBlinking := false, RecBlinkShow := true
 global RecDotGui := 0
 global IcoRecOn := A_ScriptDir "\assets\rec-on.ico"
@@ -521,8 +522,10 @@ GetActiveVisibleRect(&x, &y, &w, &h) {
 ; --- Rubber-band + fine-tune region picker ---
 ; 1) LMB drag frame (live cyan border)
 ; 2) Mouse-up -> fine-tune: drag edges/corners/move, Enter=OK, Esc=cancel
+; Full-screen PickShield blocks mouse from apps below (no text highlight / drag-select).
 SelectRegionInteractive(&x, &y, &w, &h, forRec := false) {
     x1 := 0, y1 := 0, started := false
+    ShowPickShield()
     EnsureRubber()
     conf := forRec ? "Enter=START REC" : "Enter=OK"
 
@@ -669,11 +672,51 @@ ApplyGrip(grip, bx, by, bw, bh, dx, dy, &x, &y, &w, &h) {
         h := 2
 }
 
+; Full virtual-desktop overlay: receives mouse (no WS_EX_TRANSPARENT) so drag does not
+; select text / highlight words in the app underneath. Hidden before CAPS/REC capture.
+EnsurePickShield() {
+    global PickShield
+    if (PickShield)
+        return
+    ; +E0x08000000 = WS_EX_NOACTIVATE — eat clicks without stealing keyboard focus
+    g := Gui("+AlwaysOnTop -Caption +ToolWindow +E0x08000000")
+    g.BackColor := "000000"
+    g.Show("x0 y0 w1 h1 NoActivate Hide")
+    PickShield := g
+}
+
+ShowPickShield() {
+    global PickShield
+    EnsurePickShield()
+    vsL := SysGet(76)   ; SM_XVIRTUALSCREEN
+    vsT := SysGet(77)   ; SM_YVIRTUALSCREEN
+    vsW := SysGet(78)   ; SM_CXVIRTUALSCREEN
+    vsH := SysGet(79)   ; SM_CYVIRTUALSCREEN
+    if (vsW < 2)
+        vsW := A_ScreenWidth
+    if (vsH < 2)
+        vsH := A_ScreenHeight
+    try {
+        PickShield.Show("x" vsL " y" vsT " w" vsW " h" vsH " NoActivate")
+        WinSetAlwaysOnTop(true, PickShield)
+        ; Light dim (still readable). Opacity 0 would skip hit-testing on some builds.
+        WinSetTransparent(55, PickShield)
+    }
+}
+
+HidePickShield() {
+    global PickShield
+    if (PickShield) {
+        try PickShield.Hide()
+    }
+}
+
 EnsureRubber() {
     global RbTop, RbBot, RbLeft, RbRight, RbLabel
     if (RbTop)
         return
     mk(*) {
+        ; E0x20 = click-through borders; PickShield underneath receives the drag
         g := Gui("+AlwaysOnTop -Caption +ToolWindow +E0x20 +Owner")
         g.BackColor := "00D4FF"
         g.Show("x0 y0 w1 h1 NoActivate Hide")
@@ -717,6 +760,7 @@ HideRubber() {
             try g.Hide()
         }
     }
+    HidePickShield()
 }
 
 ToWebP(png, webp) {

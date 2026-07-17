@@ -34,6 +34,9 @@ $Port = [int](Get-IniValue $IniPath 'video' 'port' '19787')
 # display REC audio: system = WASAPI loopback (what speakers play); off = silent
 $AudioMode = (Get-IniValue $IniPath 'video' 'audio' 'system').Trim().ToLowerInvariant()
 if ($AudioMode -notin @('system', 'off')) { $AudioMode = 'system' }
+# Fine-tune A/V after auto offset: positive ms delays audio (sound later); negative advances audio
+$AudioDelayMs = 0
+try { $AudioDelayMs = [int](Get-IniValue $IniPath 'video' 'audio_delay_ms' '0') } catch { $AudioDelayMs = 0 }
 
 New-Item -ItemType Directory -Force -Path $VidDir | Out-Null
 
@@ -45,6 +48,8 @@ $script:DisplayFinal = $null        # final *_.mp4 in viddir
 $script:DisplayAudio = $null        # WasapiLoopbackRecorder
 $script:DisplayAudioWav = $null
 $script:DisplayHasAudio = $false
+$script:DisplayAudioStartUtc = [datetime]::MinValue
+$script:DisplayVideoStartUtc = [datetime]::MinValue
 $script:RecKind = $null             # display | window | region
 $script:CanvasRecord = $false
 $script:CanvasSeq = 0
@@ -94,7 +99,18 @@ function Stop-DisplayAudio {
     try { $rec.Dispose() } catch {}
 }
 
-function Merge-DisplayAv([string]$videoPath, [string]$wavPath, [string]$finalPath) {
+function Format-FfmpegSeconds([double]$sec) {
+    # Invariant culture so FFmpeg always sees "0.250" not "0,250"
+    return $sec.ToString('0.000', [System.Globalization.CultureInfo]::InvariantCulture)
+}
+
+function Merge-DisplayAv {
+    param(
+        [string]$videoPath,
+        [string]$wavPath,
+        [string]$finalPath,
+        [double]$AudioLeadSec = 0
+    )
     if (-not (Test-Path $videoPath)) { return $false }
     $hasWav = $wavPath -and (Test-Path $wavPath) -and ((Get-Item $wavPath).Length -gt 128)
     if (-not $hasWav) {
@@ -103,8 +119,24 @@ function Merge-DisplayAv([string]$videoPath, [string]$wavPath, [string]$finalPat
         Write-Log ('display saved (video only): {0} ({1} bytes)' -f $finalPath, $sz)
         return $true
     }
-    # one MP4: video + system audio (AAC) via User's ffmpeg
-    $argLine = "-hide_banner -loglevel error -y -i `"$videoPath`" -i `"$wavPath`" -c:v copy -c:a aac -b:a 192k -shortest -movflags +faststart `"$finalPath`""
+    # Align streams (file t=0 for both without offset is wrong when start clocks differ):
+    #   AudioLeadSec > 0 → loopback began before gdigrab → skip that much from WAV head (-ss).
+    #   AudioLeadSec < 0 → video began first → advance audio (negative -itsoffset).
+    # audio_delay_ms (ini): extra fine-tune after auto offset (positive = sound later / more skip).
+    $adj = $AudioLeadSec + ($AudioDelayMs / 1000.0)
+    if ($adj -gt 0.005) {
+        $ss = Format-FfmpegSeconds $adj
+        $argLine = "-hide_banner -loglevel error -y -i `"$videoPath`" -ss $ss -i `"$wavPath`" -c:v copy -c:a aac -b:a 192k -shortest -movflags +faststart `"$finalPath`""
+        Write-Log ("mux A/V sync: skip audio head {0}s (lead={1:0.000} delay_ms={2})" -f $ss, $AudioLeadSec, $AudioDelayMs)
+    } elseif ($adj -lt -0.005) {
+        # Negative itsoffset advances the audio stream so late-start audio lines up with video.
+        $off = Format-FfmpegSeconds $adj
+        $argLine = "-hide_banner -loglevel error -y -i `"$videoPath`" -itsoffset $off -i `"$wavPath`" -c:v copy -c:a aac -b:a 192k -shortest -movflags +faststart `"$finalPath`""
+        Write-Log ("mux A/V sync: advance audio {0}s (lead={1:0.000} delay_ms={2})" -f $off, $AudioLeadSec, $AudioDelayMs)
+    } else {
+        $argLine = "-hide_banner -loglevel error -y -i `"$videoPath`" -i `"$wavPath`" -c:v copy -c:a aac -b:a 192k -shortest -movflags +faststart `"$finalPath`""
+        Write-Log ("mux A/V sync: no offset (lead={0:0.000} delay_ms={1})" -f $AudioLeadSec, $AudioDelayMs)
+    }
     $p = Start-Process -FilePath $Ffmpeg -ArgumentList $argLine -Wait -PassThru -WindowStyle Hidden
     $code = if ($null -eq $p) { 'null' } else { $p.ExitCode }
     if ($null -eq $p -or $p.ExitCode -ne 0 -or -not (Test-Path $finalPath)) {
@@ -130,6 +162,18 @@ function Stop-DisplayRecord {
     $wav = $script:DisplayAudioWav
     $kind = $script:RecKind
     if (-not $kind) { $kind = 'display' }
+
+    # Measured A/V start skew (positive = audio began before video)
+    $audioLeadSec = 0.0
+    if ($script:DisplayAudioStartUtc -ne [datetime]::MinValue -and $script:DisplayVideoStartUtc -ne [datetime]::MinValue) {
+        $audioLeadSec = ($script:DisplayVideoStartUtc - $script:DisplayAudioStartUtc).TotalSeconds
+        Write-Log ("rec stop A/V lead: audio_ahead={0:0.000}s (audio={1:o} video={2:o})" -f `
+            $audioLeadSec, $script:DisplayAudioStartUtc, $script:DisplayVideoStartUtc)
+    }
+
+    # Stop audio FIRST so it does not keep recording while ffmpeg finalizes the MP4
+    Stop-DisplayAudio
+
     try {
         if ($null -ne $p -and -not $p.HasExited) {
             try {
@@ -150,8 +194,9 @@ function Stop-DisplayRecord {
         $script:DisplayFinal = $null
         $script:DisplayAudioWav = $null
         $script:DisplayHasAudio = $false
+        $script:DisplayAudioStartUtc = [datetime]::MinValue
+        $script:DisplayVideoStartUtc = [datetime]::MinValue
         $script:RecKind = $null
-        Stop-DisplayAudio
     }
 
     if (-not $tmpVid -or -not (Test-Path $tmpVid) -or ((Get-Item $tmpVid).Length -lt 64)) {
@@ -169,7 +214,7 @@ function Stop-DisplayRecord {
         $final = Join-Path $VidDir ("{0}_{1}.mp4" -f $prefix, (New-Stamp))
     }
 
-    $ok = Merge-DisplayAv $tmpVid $wav $final
+    $ok = Merge-DisplayAv -videoPath $tmpVid -wavPath $wav -finalPath $final -AudioLeadSec $audioLeadSec
     try { if (Test-Path $tmpVid) { Remove-Item -Force $tmpVid -ErrorAction SilentlyContinue } } catch {}
     try { if ($wav -and (Test-Path $wav)) { Remove-Item -Force $wav -ErrorAction SilentlyContinue } } catch {}
     return $ok
@@ -232,24 +277,8 @@ function Start-DesktopRecord {
     $script:DisplayAudioWav = $null
     $script:DisplayHasAudio = $false
     $script:DisplayAudio = $null
-
-    if ($AudioMode -eq 'system' -and ('WasapiLoopbackRecorder' -as [type])) {
-        try {
-            $rec = New-Object WasapiLoopbackRecorder
-            $rec.Start($tmpWav)
-            $script:DisplayAudio = $rec
-            $script:DisplayAudioWav = $tmpWav
-            $script:DisplayHasAudio = $true
-            Write-Log "loopback start: $tmpWav"
-        } catch {
-            Write-Log "loopback start failed: $_ - rec will be video-only"
-            $script:DisplayAudio = $null
-            $script:DisplayAudioWav = $null
-            $script:DisplayHasAudio = $false
-        }
-    } elseif ($AudioMode -eq 'system') {
-        Write-Log 'loopback type unavailable - rec will be video-only'
-    }
+    $script:DisplayAudioStartUtc = [datetime]::MinValue
+    $script:DisplayVideoStartUtc = [datetime]::MinValue
 
     # gdigrab: full desktop or crop (virtual desktop coords; even size for libx264)
     if ($useCrop) {
@@ -265,15 +294,56 @@ function Start-DesktopRecord {
     $psi.CreateNoWindow = $true
     $p = New-Object System.Diagnostics.Process
     $p.StartInfo = $psi
+
+    # Prepare audio + process first, then start both with minimal gap.
+    # Measure StartedUtc vs Process.Start so mux can -ss / -itsoffset the skew.
+    # Stop path ends audio before ffmpeg finalizes (was a major end-side desync).
+    if ($AudioMode -eq 'system' -and ('WasapiLoopbackRecorder' -as [type])) {
+        try {
+            $rec = New-Object WasapiLoopbackRecorder
+            $rec.Start($tmpWav)
+            $script:DisplayAudio = $rec
+            $script:DisplayAudioWav = $tmpWav
+            $script:DisplayHasAudio = $true
+            try {
+                $su = $rec.StartedUtc
+                if ($su -and $su -ne [datetime]::MinValue) {
+                    $script:DisplayAudioStartUtc = $su
+                } else {
+                    $script:DisplayAudioStartUtc = [datetime]::UtcNow
+                }
+            } catch {
+                $script:DisplayAudioStartUtc = [datetime]::UtcNow
+            }
+            Write-Log "loopback start: $tmpWav"
+        } catch {
+            Write-Log "loopback start failed: $_ - rec will be video-only"
+            $script:DisplayAudio = $null
+            $script:DisplayAudioWav = $null
+            $script:DisplayHasAudio = $false
+            $script:DisplayAudioStartUtc = [datetime]::MinValue
+        }
+    } elseif ($AudioMode -eq 'system') {
+        Write-Log 'loopback type unavailable - rec will be video-only'
+    }
+
     if (-not $p.Start()) {
         Stop-DisplayAudio
         try { if (Test-Path $tmpWav) { Remove-Item -Force $tmpWav -ErrorAction SilentlyContinue } } catch {}
         $script:DisplayOut = $null
         $script:DisplayFinal = $null
+        $script:DisplayAudioStartUtc = [datetime]::MinValue
         $script:RecKind = $null
         return @{ ok = $false; error = 'ffmpeg failed to start' }
     }
+    $script:DisplayVideoStartUtc = [datetime]::UtcNow
     $script:DisplayProc = $p
+
+    if ($script:DisplayHasAudio -and $script:DisplayAudioStartUtc -ne [datetime]::MinValue) {
+        $lead = ($script:DisplayVideoStartUtc - $script:DisplayAudioStartUtc).TotalSeconds
+        Write-Log ("rec A/V start skew: audio_ahead={0:0.000}s" -f $lead)
+    }
+
     Write-Log ("rec start kind={0} crop={1},{2} {3}x{4} tmp={5} final={6} audio={7} pid={8}" -f `
         $Kind, $X, $Y, $W, $H, $tmpVid, $final, $script:DisplayHasAudio, $p.Id)
     # Fail fast if gdigrab dies immediately (bad crop / device)
@@ -287,6 +357,8 @@ function Start-DesktopRecord {
         $script:DisplayProc = $null
         $script:DisplayOut = $null
         $script:DisplayFinal = $null
+        $script:DisplayAudioStartUtc = [datetime]::MinValue
+        $script:DisplayVideoStartUtc = [datetime]::MinValue
         $script:RecKind = $null
         return @{ ok = $false; error = 'ffmpeg exited immediately (bad crop or grab failed)'; recording = $false; mode = $Kind }
     }
@@ -590,7 +662,7 @@ try {
     Write-Log "listener failed on $prefix : $_"
     throw
 }
-Write-Log "video-host listening $prefix viddir=$VidDir ffmpeg=$Ffmpeg audio=$AudioMode"
+Write-Log "video-host listening $prefix viddir=$VidDir ffmpeg=$Ffmpeg audio=$AudioMode audio_delay_ms=$AudioDelayMs"
 
 try {
     while ($listener.IsListening) {

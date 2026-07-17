@@ -13,8 +13,10 @@ lossless=0
 fps=30
 crf=23
 port=19787
-; display REC (Shift+PrtSc): system = speakers loopback into same MP4; off = silent
+; display/window/region REC: system = speakers loopback into same MP4; off = silent
 audio=system
+; A/V fine-tune after auto start-offset (ms). Positive = delay audio (sound later); negative = advance audio
+audio_delay_ms=0
 
 [hotkeys]
 remap=1

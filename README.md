@@ -2,7 +2,7 @@
 
 **Device:** local **Windows desktop** tool (AHK + FFmpeg). Not a mobile web app. Browser helpers (`canvas-test.html`, canvas REC hook) still use a normal viewport when opened in a browser on any device for preview — capture itself requires this Windows host.
 
-**Hub batch push:** from GitHub-Repo-Helper root, `.\scripts\start-all.ps1` syncs this repo without launching the daemon (`-SyncOnly`).
+**Hub batch push:** from GitHub-Repo-Helper root, `.\scripts\start-all.ps1` syncs this repo without launching the daemon. Single `start.ps1 -Repo webpcap` = **daemon only** (no push).
 
 ## How to run
 
@@ -243,6 +243,9 @@ Hotkey-native Windows stills and video: GDI to WebP; full / window / region desk
 *webpcap* is a media pipeline micro-tool: PrtSc-family stills as WebP; full / window / region REC with system audio in one MP4 — Clipchamp-like drag framing (rubber-band + fine-tune) without a heavy UI, without fighting Game Bar or High Contrast shortcuts.
 
 ## Version History
+
+71226 5:29:25:90 PM CST
+• **`update .mds`:** hub `start-all.ps1` sync pushed this repo (`main` **`de36402`**) — capture-exclude + canvas demo main-map copy live on GitHub. Reminder: single `start.ps1 -Repo webpcap` = **daemon only** (no push); batch push = **`start-all.ps1`**.
 
 71226 5:25:52:73 PM CST
 • **`update .mds`:** canvas demo copy aligned with main REC map — `open-canvas-test.ps1`, `canvas-test.html`, `webpcap-canvas.js` no longer say Alt+Shift+PrtSc (High Contrast trap / parked canvas toggle). Demo page → use Ctrl+Shift / Win / Alt+PrtSc. **User-verified:** full display REC on canvas-test; red REC disc **absent from MP4** (capture-exclude works).

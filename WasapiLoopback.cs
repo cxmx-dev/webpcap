@@ -20,22 +20,28 @@ public sealed class WasapiLoopbackRecorder : IDisposable
     private volatile bool _run;
     private string _path;
     private string _error;
+    private DateTime _startedUtc;
     private readonly object _gate = new object();
+    private readonly ManualResetEventSlim _started = new ManualResetEventSlim(false);
 
     public string LastError { get { lock (_gate) { return _error; } } }
     public bool IsRunning { get { return _run && _thread != null && _thread.IsAlive; } }
+    /// <summary>UTC time when WASAPI capture actually began (client.Start). MinValue if never.</summary>
+    public DateTime StartedUtc { get { lock (_gate) { return _startedUtc; } } }
 
     public void Start(string wavPath)
     {
         if (string.IsNullOrEmpty(wavPath)) throw new ArgumentException("wavPath");
         Stop();
         _path = wavPath;
-        lock (_gate) { _error = null; }
+        lock (_gate) { _error = null; _startedUtc = DateTime.MinValue; }
+        _started.Reset();
         _run = true;
         _thread = new Thread(CaptureThread) { IsBackground = true, Name = "webpcap-wasapi-loopback" };
         _thread.Start();
-        // brief wait so Activate failures surface early
-        Thread.Sleep(80);
+        // Wait until capture starts (or fails) so host can measure A/V offset accurately
+        if (!_started.Wait(3000))
+            throw new InvalidOperationException("WASAPI loopback failed to start in time");
         if (LastError != null)
             throw new InvalidOperationException(LastError);
     }
@@ -53,6 +59,7 @@ public sealed class WasapiLoopbackRecorder : IDisposable
             }
         }
         _thread = null;
+        try { _started.Set(); } catch { }
     }
 
     public void Dispose() { Stop(); }
@@ -60,6 +67,13 @@ public sealed class WasapiLoopbackRecorder : IDisposable
     private void SetError(string msg)
     {
         lock (_gate) { _error = msg; }
+        try { _started.Set(); } catch { }
+    }
+
+    private void MarkStarted()
+    {
+        lock (_gate) { _startedUtc = DateTime.UtcNow; }
+        try { _started.Set(); } catch { }
     }
 
     private void CaptureThread()
@@ -115,6 +129,7 @@ public sealed class WasapiLoopbackRecorder : IDisposable
 
             hr = client.Start();
             if (hr != 0) { SetError("IAudioClient.Start 0x" + hr.ToString("X8")); return; }
+            MarkStarted();
 
             byte[] silenceScratch = null;
             while (_run)
