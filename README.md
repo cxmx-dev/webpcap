@@ -49,7 +49,7 @@ Same REC hotkey again also stops. Canvas helper is **parked** (not on the main m
 
 **While any REC is active:** a **blinking red disc** sits on the primary **taskbar**, **just left of the overflow chevron (`^`)** (left of the system-tray / clock cluster) so **you** see recording status. The disc uses Windows **`WDA_EXCLUDEFROMCAPTURE`** — visible on screen, **not** burned into full / window / region MP4 output (gdigrab). Short toast on start (~2s); **`End`** (or same REC hotkey) stops and clears the indicator. Tweak horizontal pad via `recDotFromRight` in `webpcap.ahk` (`ShowRecDot`) if DPI/tray density shifts the chevron.
 
-**Region UX:** cyan frame while dragging; after release, drag edges/corners/move the box; **`Enter`** **starts** region REC (or confirms region CAPS still); **`Esc`** cancels. Drag alone does not record video until **Enter**.
+**Region UX:** cyan frame while dragging; after release, drag edges/corners/move the box; **`Enter`** **starts** region REC (or confirms region CAPS still); **`Esc`** cancels. Drag alone does not record video until **Enter**. A light full-desktop **pick shield** sits under the frame so mouse drag does **not** select text / highlight words in the app underneath (CAPS + REC region). Shield is hidden before capture starts (not in the still or MP4).
 
 ### Which REC mode?
 
@@ -102,11 +102,13 @@ Docs never use a machine username or drive letter — clone works the same on an
 
 - **Stills:** real WebP on disk; **Ctrl+V** pastes PNG (clipboard). Region CAP = rubber-band + fine-tune + `Enter`.
 - **All REC MP4s:** **video + system audio** in **one file** (WASAPI loopback). Quiet audio if nothing is playing is OK.
+- **A/V sync:** video-host measures loopback vs gdigrab start skew, stops audio before FFmpeg finalizes, then muxes with offset. Optional fine-tune: `audio_delay_ms` in `webpcap.ini` (positive = sound later). Log: `%TEMP%\webpcap-video.log` lines like `mux A/V sync: skip audio head …`.
 - **REC status:** blinking red taskbar overlay for **all** modes (full / window / region), placed **just left of `^`**; icons under `assets/rec-on.ico` / `rec-off.ico`. Disc is **user-visible only** (`SetWindowDisplayAffinity` / `WDA_EXCLUDEFROMCAPTURE` in `webpcap.ahk`) — not in the video file. Start toast auto-hides (~2s).
 - **Full / window / region** use gdigrab (crop for window/region). Window bounds use **DWM visible frame** (avoids Win11 shadow offsets that broke gdigrab). Coords = virtual desktop.
+- **Region pick:** full-desktop click sink under the rubber-band so drag does not highlight text in the page below.
 - **Games / Game Bar:** prefer borderless windowed for window REC; full or region REC for exclusive fullscreen. Do not steal `Win`+`G`.
 - **Canvas helper** remains in the repo for demos but is **parked** off the main hotkey map.
-- Override in `webpcap.ini` (gitignored): `outdir`, `viddir`, `audio` = `system` \| `off`.
+- Override in `webpcap.ini` (gitignored): `outdir`, `viddir`, `audio` = `system` \| `off`, `audio_delay_ms` (optional A/V fine-tune).
 
 **Stop daemon:** Task Manager → end `AutoHotkey64.exe` (and the hidden PowerShell `video-host` if needed).  
 **Debug:** `.\test_hotkeys.ps1` or `webpcap.ahk --debug` (tooltips + visible tray icon). Logs: `%TEMP%\webpcap.log`, `%TEMP%\webpcap-video.log`.
@@ -187,7 +189,8 @@ ffmpeg -version
 | `lossless` | `1` = lossless WebP, `0` = lossy |
 | `fps` / `crf` | Display + canvas encode |
 | `port` | video-host port (default `19787`) |
-| `audio` | Display REC: `system` = speakers loopback into same MP4 (default); `off` = silent |
+| `audio` | Full / window / region REC: `system` = speakers loopback into same MP4 (default); `off` = silent |
+| `audio_delay_ms` | Optional A/V fine-tune after auto start-offset (ms). Positive = delay audio (sound later); negative = advance audio |
 | `remap` | `1` = hook hotkeys, `0` = disable hooks |
 
 Restart after edits: `.\build.ps1` (stop old AutoHotkey / video-host first if needed).
@@ -243,6 +246,12 @@ Hotkey-native Windows stills and video: GDI to WebP; full / window / region desk
 *webpcap* is a media pipeline micro-tool: PrtSc-family stills as WebP; full / window / region REC with system audio in one MP4 — Clipchamp-like drag framing (rubber-band + fine-tune) without a heavy UI, without fighting Game Bar or High Contrast shortcuts.
 
 ## Version History
+
+71626 11:10:08:88 PM CST
+• **`update .mds`:** local docs only — private session log standardized as **`webpcap_convo.md`** (gitignored; keep that name). No product/code change; public set unchanged.
+
+71626 10:17:00:87 PM CST
+• **`update .mds`:** **A/V sync** for all REC modes (WASAPI `StartedUtc` + mux `-ss` / `-itsoffset`; stop audio before FFmpeg finalize; ini `audio_delay_ms`). **Region pick shield** — full-desktop click sink so rubber-band drag does not highlight text under the cursor (CAPS + REC); User-verified clean `Region_*.mp4`. Private ops guide `INSTRUCTIONS.md` (gitignored). Hub **`start-all.ps1`** pushed public set (`main` **`b9f51ae`**). Daemon = `build.ps1` / `start.ps1 -Repo webpcap` only (no push).
 
 71226 5:29:25:90 PM CST
 • **`update .mds`:** hub `start-all.ps1` sync pushed this repo (`main` **`de36402`**) — capture-exclude + canvas demo main-map copy live on GitHub. Reminder: single `start.ps1 -Repo webpcap` = **daemon only** (no push); batch push = **`start-all.ps1`**.
