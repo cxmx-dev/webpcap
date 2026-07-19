@@ -49,6 +49,8 @@ Same REC hotkey again also stops. Canvas helper is **parked** (not on the main m
 
 **While any REC is active:** a **blinking red disc** sits on the primary **taskbar**, **just left of the overflow chevron (`^`)** (left of the system-tray / clock cluster) so **you** see recording status. The disc uses Windows **`WDA_EXCLUDEFROMCAPTURE`** — visible on screen, **not** burned into full / window / region MP4 output (gdigrab). Short toast on start (~2s); **`End`** (or same REC hotkey) stops and clears the indicator. Tweak horizontal pad via `recDotFromRight` in `webpcap.ahk` (`ShowRecDot`) if DPI/tray density shifts the chevron.
 
+**Shortcut tags (you-only):** CAPS/REC feedback banners (saved / REC on / region hints) are a private on-screen tag — **not** a system `ToolTip` — with the same capture-exclude affinity. Region rubber-band, size label, and pick shield also exclude. **You** see chrome; stills and MP4s do not.
+
 **Region UX:** cyan frame while dragging; after release, drag edges/corners/move the box; **`Enter`** **starts** region REC (or confirms region CAPS still); **`Esc`** cancels. Drag alone does not record video until **Enter**. A light full-desktop **pick shield** sits under the frame so mouse drag does **not** select text / highlight words in the app underneath (CAPS + REC region). Shield is hidden before capture starts (not in the still or MP4).
 
 ### Which REC mode?
@@ -104,6 +106,7 @@ Docs never use a machine username or drive letter — clone works the same on an
 - **All REC MP4s:** **video + system audio** in **one file** (WASAPI loopback). Quiet audio if nothing is playing is OK.
 - **A/V sync:** video-host measures loopback vs gdigrab start skew, stops audio before FFmpeg finalizes, then muxes with offset. Optional fine-tune: `audio_delay_ms` in `webpcap.ini` (positive = sound later). Log: `%TEMP%\webpcap-video.log` lines like `mux A/V sync: skip audio head …`.
 - **REC status:** blinking red taskbar overlay for **all** modes (full / window / region), placed **just left of `^`**; icons under `assets/rec-on.ico` / `rec-off.ico`. Disc is **user-visible only** (`SetWindowDisplayAffinity` / `WDA_EXCLUDEFROMCAPTURE` in `webpcap.ahk`) — not in the video file. Start toast auto-hides (~2s).
+- **Shortcut tags:** CAPS/REC feedback banners (and region pick chrome) use the same **exclude-from-capture** affinity — **you** see them; stills/MP4 do not.
 - **Full / window / region** use gdigrab (crop for window/region). Window bounds use **DWM visible frame** (avoids Win11 shadow offsets that broke gdigrab). Coords = virtual desktop.
 - **Region pick:** full-desktop click sink under the rubber-band so drag does not highlight text in the page below.
 - **Games / Game Bar:** prefer borderless windowed for window REC; full or region REC for exclusive fullscreen. Do not steal `Win`+`G`.
@@ -246,6 +249,9 @@ Hotkey-native Windows stills and video: GDI to WebP; full / window / region desk
 *webpcap* is a media pipeline micro-tool: PrtSc-family stills as WebP; full / window / region REC with system audio in one MP4 — Clipchamp-like drag framing (rubber-band + fine-tune) without a heavy UI, without fighting Game Bar or High Contrast shortcuts.
 
 ## Version History
+
+71826 9:37:50:12 PM CST
+• **`update .mds`:** CAPS/REC **shortcut tags** (and region pick chrome) are **user-visible only** — `Tip()` is a private Gui with `WDA_EXCLUDEFROMCAPTURE` (`ExcludeFromCapture`); rubber-band, size label, pick shield included. Replaces system `ToolTip` that could burn into stills/REC. Restart daemon (`.\build.ps1`) to load.
 
 71626 11:10:08:88 PM CST
 • **`update .mds`:** local docs only — private session log standardized as **`webpcap_convo.md`** (gitignored; keep that name). No product/code change; public set unchanged.

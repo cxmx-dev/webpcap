@@ -13,11 +13,11 @@ global RbLabel := 0
 global PickShield := 0   ; full-screen click sink during region pick (stops text selection under cursor)
 global RecBlinking := false, RecBlinkShow := true
 global RecDotGui := 0
+global TipGui := 0, TipTxt := 0
 global IcoRecOn := A_ScriptDir "\assets\rec-on.ico"
 global IcoRecOff := A_ScriptDir "\assets\rec-off.ico"
 
 CoordMode "Mouse", "Screen"
-CoordMode "ToolTip", "Screen"
 
 testMode := ""
 for i, a in A_Args {
@@ -179,7 +179,7 @@ VidRegionStart() {
     ok := SelectRegionInteractive(&x, &y, &w, &h, true)
     SelectingRegion := false
     HideRubber()
-    ToolTip
+    HideTip()
     if (!ok) {
         Log("region REC cancelled by user")
         return Tip("region REC cancelled", 1500)
@@ -315,13 +315,18 @@ RecBlinkTick() {
     }
 }
 
-; Keep REC disc on-screen for the user, but omit it from gdigrab / BitBlt / Desktop Duplication.
+; Keep webpcap UI on-screen for the user, but omit from gdigrab / BitBlt / Desktop Duplication.
 ; WDA_EXCLUDEFROMCAPTURE = 0x11 (Windows 10 2004+). Fails silently on older OS.
-ExcludeRecDotFromCapture(hwnd) {
+; Used for: REC disc, CAPS/REC feedback tags (Tip), region rubber-band + size label.
+ExcludeFromCapture(hwnd) {
     if (!hwnd)
         return
     static WDA_EXCLUDEFROMCAPTURE := 0x11
     try DllCall("user32\SetWindowDisplayAffinity", "ptr", hwnd, "uint", WDA_EXCLUDEFROMCAPTURE)
+}
+; Back-compat alias
+ExcludeRecDotFromCapture(hwnd) {
+    ExcludeFromCapture(hwnd)
 }
 
 EnsureRecDot() {
@@ -471,7 +476,7 @@ CapRegion(png) {
     ok := SelectRegionInteractive(&x, &y, &w, &h)
     SelectingRegion := false
     HideRubber()
-    ToolTip
+    HideTip()
     if (!ok)
         return false
     if (w < 2 || h < 2)
@@ -701,6 +706,7 @@ ShowPickShield() {
         WinSetAlwaysOnTop(true, PickShield)
         ; Light dim (still readable). Opacity 0 would skip hit-testing on some builds.
         WinSetTransparent(55, PickShield)
+        ExcludeFromCapture(PickShield.Hwnd)  ; dimmer is for you only
     }
 }
 
@@ -721,6 +727,7 @@ EnsureRubber() {
         g.BackColor := "00D4FF"
         g.Show("x0 y0 w1 h1 NoActivate Hide")
         WinSetTransparent(200, g)
+        ExcludeFromCapture(g.Hwnd)  ; pick chrome: you see it; captures do not
         return g
     }
     RbTop := mk(), RbBot := mk(), RbLeft := mk(), RbRight := mk()
@@ -730,6 +737,7 @@ EnsureRubber() {
     global RbLabelTxt := RbLabel.Add("Text", "c00D4FF", "0x0")
     RbLabel.Show("x0 y0 w80 h18 NoActivate Hide")
     WinSetTransparent(220, RbLabel)
+    ExcludeFromCapture(RbLabel.Hwnd)
 }
 
 ShowRubber(x, y, w, h) {
@@ -750,6 +758,10 @@ ShowRubber(x, y, w, h) {
         if (ly < 0)
             ly := y + h + 4
         RbLabel.Show("x" x " y" ly " w80 h18 NoActivate")
+        ; re-apply affinity after show (some builds drop it)
+        for g in [RbTop, RbBot, RbLeft, RbRight, RbLabel]
+            if (g)
+                ExcludeFromCapture(g.Hwnd)
     }
 }
 
@@ -789,13 +801,71 @@ Log(msg) {
     line := FormatTime(, "yyyy-MM-dd HH:mm:ss") " " msg "`n"
     try FileAppend line, A_Temp "\webpcap.log", "UTF-8-RAW"
     if (DBG)
-        ToolTip msg, , , 2
+        Tip("[dbg] " msg, 0)
 }
 
+; --- Private feedback tags (CAPS / REC shortcuts) ---
+; Visible only to the signed-in user; excluded from stills + REC MP4 via WDA_EXCLUDEFROMCAPTURE.
+EnsureTipGui() {
+    global TipGui, TipTxt
+    if (TipGui) {
+        try {
+            if (WinExist("ahk_id " TipGui.Hwnd)) {
+                ExcludeFromCapture(TipGui.Hwnd)
+                return
+            }
+        } catch {
+        }
+        try TipGui.Destroy()
+        TipGui := 0
+        TipTxt := 0
+    }
+    g := Gui("+AlwaysOnTop -Caption +ToolWindow +E0x20")
+    g.BackColor := "0D1520"
+    g.MarginX := 12
+    g.MarginY := 10
+    g.SetFont("s10 cE8F4FF", "Segoe UI")
+    TipTxt := g.Add("Text", "w400 h36 cE8F4FF Wrap", "")
+    g.Show("x0 y0 w424 h56 NoActivate Hide")
+    try WinSetTransparent(235, g)
+    try WinSetAlwaysOnTop(true, g)
+    ExcludeFromCapture(g.Hwnd)
+    TipGui := g
+}
+
+HideTip(*) {
+    global TipGui
+    try SetTimer(HideTip, 0)
+    if (TipGui) {
+        try TipGui.Hide()
+    }
+}
+
+; timeout > 0: auto-hide ms; timeout = 0 + non-empty msg: sticky until next Tip/HideTip; msg "": hide
 Tip(msg, timeout := 0) {
-    ToolTip msg, , , 1
+    global TipGui, TipTxt
+    if (msg = "") {
+        HideTip()
+        return
+    }
+    EnsureTipGui()
+    TipTxt.Value := msg
+    mon := MonitorGetPrimary()
+    MonitorGetWorkArea(mon, &L, &T, &R, &B)
+    w := 424
+    h := 56
+    x := L + ((R - L - w) // 2)
+    y := B - h - 52
+    if (y < T)
+        y := T + 8
+    try {
+        TipGui.Show("x" x " y" y " w" w " h" h " NoActivate")
+        try WinSetAlwaysOnTop(true, TipGui)
+        ExcludeFromCapture(TipGui.Hwnd)
+    } catch as e {
+        Log("Tip show fail: " e.Message)
+    }
+    try SetTimer(HideTip, 0)
     if (timeout > 0)
-        SetTimer () => ToolTip(), -timeout
-    else if (timeout = 0 && msg = "")
-        ToolTip
+        SetTimer(HideTip, -timeout)
 }
