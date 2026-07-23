@@ -2,7 +2,7 @@
 
 **Device:** local **Windows desktop** tool (AHK + FFmpeg). Not a mobile web app. Browser helpers (`canvas-test.html`, canvas REC hook) still use a normal viewport when opened in a browser on any device for preview — capture itself requires this Windows host.
 
-**Hub batch push:** from GitHub-Repo-Helper root, `.\scripts\start-all.ps1` syncs this repo without launching the daemon. Single `start.ps1 -Repo webpcap` = **daemon only** (no push).
+**Hub batch push:** from the portfolio hub root, `.\scripts\start-all.ps1` syncs this repo without launching the daemon. Single `start.ps1 -Repo webpcap` = **daemon only** (no push).
 
 ## How to run
 

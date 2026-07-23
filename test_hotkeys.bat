@@ -1,7 +1,8 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-set "AHK=C:\Program Files\AutoHotkey\v2\AutoHotkey.exe"
+set "AHK=%ProgramFiles%\AutoHotkey\v2\AutoHotkey64.exe"
+if not exist "%AHK%" set "AHK=%ProgramFiles%\AutoHotkey\v2\AutoHotkey.exe"
 set "OUT=%USERPROFILE%\Pictures\Screenshots\webpcap CAPS"
 
 echo === webpcap v0.1 test plan ===
