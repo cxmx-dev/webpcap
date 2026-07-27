@@ -32,6 +32,29 @@ if (Test-Path $pidFile) {
     Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
 }
 
+# Stop prior external watchdog (so re-run does not stack watchers)
+$wdPidFile = Join-Path $env:TEMP 'webpcap-watchdog.pid'
+if (Test-Path $wdPidFile) {
+    try {
+        $wdOld = [int]((Get-Content $wdPidFile -Raw).Trim())
+        if ($wdOld -gt 0) {
+            Stop-Process -Id $wdOld -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Milliseconds 200
+        }
+    } catch {}
+    Remove-Item $wdPidFile -Force -ErrorAction SilentlyContinue
+}
+try {
+    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+        Where-Object {
+            ($_.Name -match 'powershell') -and
+            ($_.CommandLine -and ($_.CommandLine -match 'watchdog\.ps1') -and ($_.CommandLine -match 'webpcap'))
+        } |
+        ForEach-Object {
+            Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+        }
+} catch {}
+
 # Stop prior webpcap AutoHotkey instances (avoid duplicates on re-run / logon)
 try {
     Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
@@ -74,7 +97,38 @@ if ($ok) {
 $ahkScript = Join-Path $Root 'webpcap.ahk'
 Write-Host '  launching AHK daemon (End Task AutoHotkey to stop)'
 Start-Process -FilePath $Ahk -ArgumentList "`"$ahkScript`""
+
+# External watchdog: restarts AHK if it dies + host if unhealthy (independent of AHK)
+$wdScript = Join-Path $Root 'watchdog.ps1'
+if (Test-Path $wdScript) {
+    $wdInterval = 30
+    try {
+        $wdLine = (Get-Content $ini -ErrorAction SilentlyContinue | Where-Object { $_ -match '^\s*watchdog_sec\s*=' } | Select-Object -First 1)
+        if ($wdLine -match '=\s*(\d+)') { $wdInterval = [int]$Matches[1] }
+    } catch {}
+    if ($wdInterval -lt 10) { $wdInterval = 10 }
+    # Array ArgumentList avoids PowerShell quoting bugs that drop -File scripts silently
+    Start-Process -FilePath 'powershell.exe' -ArgumentList @(
+        '-NoProfile'
+        '-WindowStyle', 'Hidden'
+        '-ExecutionPolicy', 'Bypass'
+        '-File', $wdScript
+        '-Root', $Root
+        '-IntervalSec', "$wdInterval"
+    ) -WindowStyle Hidden
+    Start-Sleep -Milliseconds 600
+    $wdPidFile = Join-Path $env:TEMP 'webpcap-watchdog.pid'
+    if (Test-Path $wdPidFile) {
+        Write-Host "  watchdog OK  (every ${wdInterval}s; log %TEMP%\webpcap-watchdog.log)" -ForegroundColor Green
+    } else {
+        Write-Host '  watchdog may have failed to start — check %TEMP%\webpcap-watchdog.log' -ForegroundColor Yellow
+    }
+} else {
+    Write-Host '  watchdog.ps1 missing - AHK will still self-heal video-host only' -ForegroundColor Yellow
+}
+
 Write-Host 'Started. Edit webpcap.ini then restart to apply config.'
+Write-Host '  Tray icon = daemon up (right-click: reload / restart host / folders)'
 Write-Host ''
 Write-Host 'Daemon running in background - CAPS / REC hotkeys:' -ForegroundColor Green
 Write-Host '  CAPS  PrtSc              full still'

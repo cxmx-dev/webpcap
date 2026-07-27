@@ -1,8 +1,10 @@
 #Requires AutoHotkey v2.0
 #SingleInstance Force
 #UseHook
+#InputLevel 1
 ; webpcap — WebP stills + MP4 REC (full / window / region) + system audio
 ; Rubber-band region + fine-tune; End stops any REC
+; Hardening: sleep-resume rehook, host/AHK watchdog, visible idle tray
 
 global FFMPEG := "", OUT := "", Q := 90, LOSSLESS := 0, REMAP := 1, DBG := false
 global VIDPORT := 19787, VIDDIR := ""
@@ -16,6 +18,11 @@ global RecDotGui := 0
 global TipGui := 0, TipTxt := 0
 global IcoRecOn := A_ScriptDir "\assets\rec-on.ico"
 global IcoRecOff := A_ScriptDir "\assets\rec-off.ico"
+; Daemon hardening (sleep rehook + host watchdog + visible tray)
+global SHOW_TRAY := 1, WATCHDOG := 1, WATCHDOG_SEC := 30, REHOOK_ON_RESUME := 1
+global HostHealthy := false, HostRestartUtc := 0, ResumePending := false
+global MsgSink := 0, HotkeysRegistered := false
+global TrayStatusItem := "webpcap — ready"
 
 CoordMode "Mouse", "Screen"
 
@@ -37,12 +44,26 @@ if (testMode) {
     ExitApp(0)
 }
 
-; Idle: quiet tray. While REC: red blink tray + on-screen red dot (near tray).
+; Idle: visible tray (default) so User can see daemon is up. REC: red blink + on-screen disc.
 A_IconTip := "webpcap"
+SetupTrayMenu()
 TrayRestoreIdle()
+EnsureMsgSink()
+RegisterHotkeys()
+SetupPowerResume()
+SetupHostWatchdog()
+HostHealthy := (HttpGet("http://127.0.0.1:" VIDPORT "/health") != "")
+TrayRefreshStatus()
+Log("daemon up  tray=" SHOW_TRAY " watchdog=" WATCHDOG " rehook=" REHOOK_ON_RESUME " host=" (HostHealthy ? "ok" : "down"))
+Persistent
 
-#InputLevel 1
-if (REMAP) {
+; --- Hotkeys (callable again after resume / soft rehook) ---
+RegisterHotkeys() {
+    global REMAP, HotkeysRegistered
+    if (!REMAP) {
+        HotkeysRegistered := false
+        return
+    }
     ; HotIf + *PrtSc: PrtSc often drops multi-mod combos when using only $^! style hotkeys.
     ; That bug turned Ctrl+Alt+PrtSc into CAPS region (webp) → End said "nothing recording".
 
@@ -79,11 +100,244 @@ if (REMAP) {
     HotIf()
 
     Hotkey "End", (*) => VidStop(), "On"
+    HotkeysRegistered := true
 }
-Persistent
+
+; Hidden message sink so WM_POWERBROADCAST reaches this process after sleep/wake.
+EnsureMsgSink() {
+    global MsgSink
+    if (MsgSink) {
+        try {
+            if (WinExist("ahk_id " MsgSink.Hwnd))
+                return
+        } catch {
+        }
+        try MsgSink.Destroy()
+        MsgSink := 0
+    }
+    g := Gui("+ToolWindow -Caption +E0x08000000")
+    g.Show("x0 y0 w1 h1 NoActivate Hide")
+    MsgSink := g
+}
+
+SetupPowerResume() {
+    global REHOOK_ON_RESUME
+    if (!REHOOK_ON_RESUME)
+        return
+    OnMessage(0x218, OnPowerBroadcast)  ; WM_POWERBROADCAST
+}
+
+OnPowerBroadcast(wParam, *) {
+    ; PBT_APMSUSPEND=4  PBT_APMRESUMESUSPEND=7  PBT_APMRESUMECRITICAL=6  PBT_APMRESUMEAUTOMATIC=0x12
+    if (wParam = 0x4) {
+        Log("power: suspend")
+        return 0
+    }
+    if (wParam = 0x7 || wParam = 0x12 || wParam = 0x6) {
+        global ResumePending
+        Log("power: resume wParam=" wParam)
+        ; Debounce multi-fire resume messages
+        ResumePending := true
+        SetTimer(OnSystemResume, -2500)
+        return 0
+    }
+}
+
+; After sleep, low-level PrtSc hooks often die while the process still looks alive.
+; Prefer Reload (full rehook). If REC is active, soft-rehook only so recording is not killed.
+OnSystemResume(*) {
+    global ResumePending, SelectingRegion, VIDPORT, RecBlinking
+    if (!ResumePending)
+        return
+    ResumePending := false
+    if (SelectingRegion) {
+        Log("resume: region pick active — delay rehook 5s")
+        SetTimer(OnSystemResume, -5000)
+        ResumePending := true
+        return
+    }
+    st := HttpGet("http://127.0.0.1:" VIDPORT "/health")
+    recActive := (st != "" && (InStr(st, '"displayRecording":true') || InStr(st, '"displayRecording": true')))
+    if (recActive || RecBlinking) {
+        Log("resume: REC active — soft rehook only (no Reload)")
+        try RegisterHotkeys()
+        EnsureHostAlive(true)
+        TrayRefreshStatus()
+        Tip("webpcap rehooked after wake (REC still running)", 2500)
+        return
+    }
+    EnsureHostAlive(true)
+    Log("resume: Reload for full hotkey rehook")
+    ; Brief tip may not show across Reload; log is the durable signal
+    Reload
+}
+
+SetupHostWatchdog() {
+    global WATCHDOG, WATCHDOG_SEC
+    if (!WATCHDOG)
+        return
+    sec := WATCHDOG_SEC < 10 ? 10 : WATCHDOG_SEC
+    ; Fat-arrow callback is more reliable than bare function name for SetTimer in some AHK builds
+    SetTimer(() => HostWatchdogTick(), sec * 1000)
+}
+
+HostWatchdogTick() {
+    try {
+        global SelectingRegion, RecBlinking, HostHealthy
+        if (SelectingRegion)
+            return
+        was := HostHealthy
+        ok := EnsureHostAlive(false)
+        HostHealthy := ok
+        if (!RecBlinking)
+            TrayRefreshStatus()
+        if (!ok && was)
+            Tip("video-host down - restarting...", 2000)
+        else if (ok && !was)
+            Log("watchdog: video-host back")
+        else if (!ok)
+            Log("watchdog: host still down after ensure")
+    } catch as e {
+        Log("watchdog tick error: " e.Message)
+    }
+}
+
+; Returns true if /health is OK. Optionally restarts host when down (throttled).
+EnsureHostAlive(forceRestart := false) {
+    global VIDPORT, HostRestartUtc
+    st := HttpGet("http://127.0.0.1:" VIDPORT "/health")
+    if (st != "")
+        return true
+    ; Throttle: at most one host restart every 45s unless force
+    now := A_TickCount
+    if (!forceRestart && HostRestartUtc && (now - HostRestartUtc < 45000))
+        return false
+    HostRestartUtc := now
+    Log("watchdog: video-host offline - restarting")
+    RestartVideoHost()
+    ; Wait briefly for health
+    Loop 15 {
+        Sleep 200
+        if (HttpGet("http://127.0.0.1:" VIDPORT "/health") != "")
+            return true
+    }
+    return false
+}
+
+RestartVideoHost() {
+    global PSHELL
+    host := A_ScriptDir "\video-host.ps1"
+    if (!FileExist(host)) {
+        Log("watchdog: missing video-host.ps1")
+        return
+    }
+    pidFile := A_Temp "\webpcap-video-host.pid"
+    if (FileExist(pidFile)) {
+        try {
+            oldTxt := Trim(FileRead(pidFile, "UTF-8"))
+            ; strip BOM / CR leftovers; pull first integer only
+            if (RegExMatch(oldTxt, "(\d+)", &m)) {
+                old := m[1] + 0  ; numeric coerce without Integer() type pitfalls
+                if (old > 0) {
+                    try ProcessClose(old)
+                }
+            }
+        } catch as e {
+            Log("watchdog: pid close " e.Message)
+        }
+        try FileDelete(pidFile)
+        Sleep 400
+    }
+    ; Same launch shape as build.ps1 (quoted -File / -Root)
+    args := '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' host '" -Root "' A_ScriptDir '"'
+    try {
+        Run(PSHELL " " args,, "Hide")
+        Log("watchdog: launched video-host")
+    } catch as e {
+        Log("watchdog: start host fail " e.Message)
+    }
+}
+
+SetupTrayMenu() {
+    global TrayStatusItem
+    A_TrayMenu.Delete()
+    TrayStatusItem := "webpcap — ready"
+    A_TrayMenu.Add(TrayStatusItem, (*) => 0)
+    A_TrayMenu.Disable(TrayStatusItem)
+    A_TrayMenu.Add()
+    A_TrayMenu.Add("Reload daemon (rehook)", (*) => TrayReload())
+    A_TrayMenu.Add("Restart video-host", (*) => TrayRestartHost())
+    A_TrayMenu.Add()
+    A_TrayMenu.Add("Open CAPS folder", (*) => TrayOpenCaps())
+    A_TrayMenu.Add("Open REC folder", (*) => TrayOpenRec())
+    A_TrayMenu.Add()
+    A_TrayMenu.Add("Exit webpcap", (*) => TrayExit())
+}
+
+TrayReload() {
+    Log("tray: Reload")
+    Reload
+}
+
+TrayRestartHost() {
+    Log("tray: restart video-host")
+    Tip("restarting video-host…", 1500)
+    ok := EnsureHostAlive(true)
+    global HostHealthy
+    HostHealthy := ok
+    TrayRefreshStatus()
+    Tip(ok ? "video-host OK" : "video-host still down — see webpcap-video.log", ok ? 1500 : 3500)
+}
+
+TrayOpenCaps() {
+    global OUT
+    try Run('explorer "' OUT '"')
+}
+
+TrayOpenRec() {
+    global VIDDIR
+    if (VIDDIR)
+        try Run('explorer "' VIDDIR '"')
+}
+
+TrayExit() {
+    Log("tray: Exit")
+    ExitApp()
+}
+
+TrayRefreshStatus() {
+    global HostHealthy, SHOW_TRAY, DBG, RecBlinking, TrayStatusItem
+    if (RecBlinking)
+        return
+    st := HostHealthy ? "ready" : "host offline"
+    newName := "webpcap — " st
+    A_IconTip := "webpcap · " st "`nPrtSc still · Ctrl+Shift+PrtSc REC`nRight-click for menu"
+    if (TrayStatusItem != newName) {
+        try {
+            A_TrayMenu.Rename(TrayStatusItem, newName)
+            TrayStatusItem := newName
+        } catch {
+            try {
+                SetupTrayMenu()
+                TrayStatusItem := "webpcap — ready"
+                if (TrayStatusItem != newName) {
+                    try A_TrayMenu.Rename(TrayStatusItem, newName)
+                    TrayStatusItem := newName
+                }
+            } catch {
+            }
+        }
+    }
+    ; Keep idle icon visible unless tray_icon=0 (and not debug)
+    if (SHOW_TRAY || DBG)
+        A_IconHidden := false
+    else
+        A_IconHidden := true
+}
 
 LoadIni() {
     global FFMPEG, OUT, Q, LOSSLESS, REMAP, VIDPORT, VIDDIR
+    global SHOW_TRAY, WATCHDOG, WATCHDOG_SEC, REHOOK_ON_RESUME
     ini := A_ScriptDir "\webpcap.ini"
     ex := A_ScriptDir "\webpcap.ini.example"
     if (!FileExist(ini) && FileExist(ex))
@@ -95,6 +349,10 @@ LoadIni() {
     LOSSLESS := IniRead(ini, "encode", "lossless", 0)
     REMAP := IniRead(ini, "hotkeys", "remap", 1)
     VIDPORT := Integer(IniRead(ini, "video", "port", 19787))
+    SHOW_TRAY := Integer(IniRead(ini, "daemon", "tray_icon", 1))
+    WATCHDOG := Integer(IniRead(ini, "daemon", "watchdog", 1))
+    WATCHDOG_SEC := Integer(IniRead(ini, "daemon", "watchdog_sec", 30))
+    REHOOK_ON_RESUME := Integer(IniRead(ini, "daemon", "rehook_on_resume", 1))
     if (!FileExist(FFMPEG))
         Tip("ffmpeg not found - edit webpcap.ini", 4000)
 }
@@ -141,7 +399,19 @@ VidToggle(mode) {
         Log("REC toggle " mode)
         st := HttpGet("http://127.0.0.1:" VIDPORT "/health")
         if (st = "") {
-            return Tip("video-host offline - run .\build.ps1", 4000)
+            ; Self-heal once before failing the REC hotkey
+            if (EnsureHostAlive(true)) {
+                st := HttpGet("http://127.0.0.1:" VIDPORT "/health")
+            }
+            if (st = "") {
+                global HostHealthy
+                HostHealthy := false
+                TrayRefreshStatus()
+                return Tip("video-host offline - run .\build.ps1", 4000)
+            }
+            global HostHealthy
+            HostHealthy := true
+            TrayRefreshStatus()
         }
         if (InStr(st, '"displayRecording":true') || InStr(st, '"displayRecording": true')) {
             return VidStop()
@@ -247,18 +517,24 @@ VidTipFromBody(body, mode) {
 ; --- REC indicator: on-screen red blink (above taskbar, tray corner) + tray icon ---
 ; Blink uses opacity (not Hide) so a stuck "hidden" phase can't make the dot vanish forever.
 TrayRestoreIdle() {
-    global DBG, RecBlinking, RecBlinkShow
+    global DBG, RecBlinking, RecBlinkShow, SHOW_TRAY, IcoRecOff, HostHealthy
     try SetTimer(RecBlinkTick, 0)
     RecBlinking := false
     RecBlinkShow := true
     HideRecDot()
-    A_IconTip := "webpcap"
-    if (DBG) {
+    ; Visible tray when idle (default) — proof daemon is up without Task Manager
+    if (SHOW_TRAY || DBG)
         A_IconHidden := false
+    else
+        A_IconHidden := true
+    if (FileExist(IcoRecOff)) {
+        try TraySetIcon(IcoRecOff)
+    } else if (DBG) {
         try TraySetIcon("imageres.dll", 67)
-        return
+    } else {
+        try TraySetIcon("imageres.dll", 67)  ; camera-ish shell icon fallback
     }
-    A_IconHidden := true
+    TrayRefreshStatus()
 }
 
 RecIndicatorStart(modeLabel := "REC") {

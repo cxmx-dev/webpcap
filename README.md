@@ -15,8 +15,12 @@ cd path\to\webpcap
 
 Do **not** paste angle-bracket placeholders into PowerShell — `<` is reserved. Use a real folder path.
 
-Starts **video-host** (`http://127.0.0.1:19787`) + the AHK daemon (keeps running in the background).  
+Starts **video-host** (`http://127.0.0.1:19787`) + the AHK daemon + a small **watchdog** (keeps running in the background).  
 No hub required. Regular PowerShell is enough (Admin only for first-time FFmpeg/AHK install).
+
+**Tray:** a system-tray icon means the daemon is up (idle = dim / `rec-off`; REC = red blink). Right-click → reload daemon, restart video-host, open CAPS/REC folders, or exit.  
+**Sleep / wake:** after resume, AHK rehooks PrtSc (Reload when not recording; soft rehook if REC is active).  
+**Self-heal:** AHK pings video-host and restarts it if down; external `watchdog.ps1` restarts AHK and/or host if either dies.
 
 ### Autostart (sign-in after power-on / reboot)
 
@@ -112,9 +116,10 @@ Docs never use a machine username or drive letter — clone works the same on an
 - **Games / Game Bar:** prefer borderless windowed for window REC; full or region REC for exclusive fullscreen. Do not steal `Win`+`G`.
 - **Canvas helper** remains in the repo for demos but is **parked** off the main hotkey map.
 - Override in `webpcap.ini` (gitignored): `outdir`, `viddir`, `audio` = `system` \| `off`, `audio_delay_ms` (optional A/V fine-tune).
+- **Daemon hardening** (`[daemon]` in `webpcap.ini.example`): `tray_icon=1` (visible idle tray), `watchdog=1` + `watchdog_sec=30` (host health), `rehook_on_resume=1` (sleep/wake PrtSc rehook). External `watchdog.ps1` is started by `build.ps1`.
 
-**Stop daemon:** Task Manager → end `AutoHotkey64.exe` (and the hidden PowerShell `video-host` if needed).  
-**Debug:** `.\test_hotkeys.ps1` or `webpcap.ahk --debug` (tooltips + visible tray icon). Logs: `%TEMP%\webpcap.log`, `%TEMP%\webpcap-video.log`.
+**Stop daemon:** tray → Exit webpcap, or Task Manager → end `AutoHotkey64.exe` (and hidden PowerShell `video-host` / `watchdog` if needed).  
+**Debug:** `.\test_hotkeys.ps1` or `webpcap.ahk --debug`. Logs: `%TEMP%\webpcap.log`, `%TEMP%\webpcap-video.log`, `%TEMP%\webpcap-watchdog.log`.
 
 ---
 
@@ -195,8 +200,12 @@ ffmpeg -version
 | `audio` | Full / window / region REC: `system` = speakers loopback into same MP4 (default); `off` = silent |
 | `audio_delay_ms` | Optional A/V fine-tune after auto start-offset (ms). Positive = delay audio (sound later); negative = advance audio |
 | `remap` | `1` = hook hotkeys, `0` = disable hooks |
+| `tray_icon` | `1` = show tray when idle (default); `0` = hide until REC |
+| `watchdog` | `1` = AHK pings video-host and restarts it if down (default) |
+| `watchdog_sec` | Host health check interval seconds (default `30`, min `10`) |
+| `rehook_on_resume` | `1` = after sleep/wake, Reload AHK to re-register PrtSc (soft-rehook if REC active) |
 
-Restart after edits: `.\build.ps1` (stop old AutoHotkey / video-host first if needed).
+Restart after edits: `.\build.ps1` (stop old AutoHotkey / video-host / watchdog first if needed).
 
 ### Verify pipeline (no hotkeys)
 
@@ -215,8 +224,9 @@ If `verify.ps1` creates a `.webp` but `PrtSc` does not, Windows is stealing the 
 3. Confirm FFmpeg path in `webpcap.ini`.
 4. **Video:** `%TEMP%\webpcap-video.log` and `http://127.0.0.1:19787/health`.
 5. **Canvas:** browser console should show `[webpcap] canvas helper ready`.
-6. **Stills log:** `%TEMP%\webpcap.log`.
-7. Restart: end AutoHotkey + video-host, then `.\build.ps1`.
+6. **Stills log:** `%TEMP%\webpcap.log`. **Watchdog:** `%TEMP%\webpcap-watchdog.log`.
+7. After sleep: wait a few seconds for rehook, or tray → **Reload daemon**, or `.\build.ps1`.
+8. No tray icon → daemon not running → `.\build.ps1`.
 
 **Wrong folder?** Run scripts from inside `webpcap`.
 
@@ -238,10 +248,10 @@ Hotkey-native Windows stills and video: GDI to WebP; full / window / region desk
 
 ## Stack
 
-- **AutoHotkey v2** — hotkeys, rubber-band region + fine-tune, DWM window bounds
+- **AutoHotkey v2** — hotkeys, rubber-band region + fine-tune, DWM window bounds, sleep rehook, tray
 - **FFmpeg** — PNG → WebP (`libwebp`); gdigrab full/crop → H.264; AAC mux
 - **WASAPI loopback** (`WasapiLoopback.cs`) — system audio for all REC modes
-- **PowerShell** — GDI capture, clipboard, video-host (`127.0.0.1`)
+- **PowerShell** — GDI capture, clipboard, video-host (`127.0.0.1`), external `watchdog.ps1`
 - **webpcap-canvas.js** — optional largest-`<canvas>` recorder (parked hotkey)
 
 ## Portfolio blurb
@@ -249,6 +259,12 @@ Hotkey-native Windows stills and video: GDI to WebP; full / window / region desk
 *webpcap* is a media pipeline micro-tool: PrtSc-family stills as WebP; full / window / region REC with system audio in one MP4 — Clipchamp-like drag framing (rubber-band + fine-tune) without a heavy UI, without fighting Game Bar or High Contrast shortcuts.
 
 ## Version History
+
+72726 8:22:34:14 AM CST
+• **`update .mds`:** **Daemon hardening** — sleep/wake PrtSc rehook (`rehook_on_resume`); dual watchdog (AHK host health + external `watchdog.ps1` restarts AHK/host); **visible idle tray** + right-click menu (reload / restart host / folders / exit). `build.ps1` starts all three. Ini `[daemon]` in `webpcap.ini.example`. Verified: host kill recovery ~8s; AHK kill recovery ~5s.
+
+72226 11:43:55:28 PM CST
+• **`update .mds`:** OPSEC scrub — public README says **portfolio hub root** (no hub folder fingerprint); `build.bat` / `test_hotkeys.bat` use `%ProgramFiles%` for AHK. Hub privacy scan **OK**. Pushed via `start-all` (`main` **`6cdeb1b`**).
 
 71826 9:37:50:12 PM CST
 • **`update .mds`:** CAPS/REC **shortcut tags** (and region pick chrome) are **user-visible only** — `Tip()` is a private Gui with `WDA_EXCLUDEFROMCAPTURE` (`ExcludeFromCapture`); rubber-band, size label, pick shield included. Replaces system `ToolTip` that could burn into stills/REC. Restart daemon (`.\build.ps1`) to load.
