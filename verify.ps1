@@ -1,4 +1,4 @@
-# One-shot pipeline test (no hotkeys) — run from Repos\webpcap
+# One-shot pipeline test (no hotkeys) — run from this repo root
 $ErrorActionPreference = 'Stop'
 $Root = $PSScriptRoot
 $ini = Join-Path $Root 'webpcap.ini'

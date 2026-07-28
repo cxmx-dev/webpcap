@@ -26,7 +26,7 @@ public sealed class WasapiLoopbackRecorder : IDisposable
 
     public string LastError { get { lock (_gate) { return _error; } } }
     public bool IsRunning { get { return _run && _thread != null && _thread.IsAlive; } }
-    /// <summary>UTC time when WASAPI capture actually began (client.Start). MinValue if never.</summary>
+    /// <summary>Wall-clock time when WASAPI capture actually began (client.Start). MinValue if never.</summary>
     public DateTime StartedUtc { get { lock (_gate) { return _startedUtc; } } }
 
     public void Start(string wavPath)

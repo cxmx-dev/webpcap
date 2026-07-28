@@ -15,11 +15,11 @@ cd path\to\webpcap
 
 Do **not** paste angle-bracket placeholders into PowerShell — `<` is reserved. Use a real folder path.
 
-Starts **video-host** (`http://127.0.0.1:19787`) + the AHK daemon + a small **watchdog** (keeps running in the background).  
+Starts **video-host** (`http://127.0.0.1:19787`) + the AHK daemon + a small **watchdog** (keeps running in the background).
 No hub required. Regular PowerShell is enough (Admin only for first-time FFmpeg/AHK install).
 
-**Tray:** a system-tray icon means the daemon is up (idle = dim / `rec-off`; REC = red blink). Right-click → reload daemon, restart video-host, open CAPS/REC folders, or exit.  
-**Sleep / wake:** after resume, AHK rehooks PrtSc (Reload when not recording; soft rehook if REC is active).  
+**Tray:** a system-tray icon means the daemon is up (idle = dim / `rec-off`; REC = red blink). Right-click → reload daemon, restart video-host, open CAPS/REC folders, or exit.
+**Sleep / wake:** after resume, AHK rehooks PrtSc (Reload when not recording; soft rehook if REC is active).
 **Self-heal:** AHK pings video-host and restarts it if down; external `watchdog.ps1` restarts AHK and/or host if either dies.
 
 ### Autostart (sign-in after power-on / reboot)
@@ -31,12 +31,12 @@ cd path\to\webpcap
 .\install-autostart.ps1
 ```
 
-Registers a **user** Scheduled Task (`webpcap`) that runs `build.ps1` ~20s after you sign in.  
+Registers a **user** Scheduled Task (`webpcap`) that runs `build.ps1` ~20s after you sign in.
 Remove: `.\uninstall-autostart.ps1`
 
 ### Hotkeys (while daemon is running)
 
-Right-hand **PrtSc** + left-hand mods. **End** stops any REC.  
+Right-hand **PrtSc** + left-hand mods. **End** stops any REC.
 Avoids OS traps: **not** `Alt`+`Shift`+`PrtSc` (High Contrast), **not** `Win`+`Alt`+`PrtSc` (Xbox Game Bar screenshot). **`Win`+`G`** stays free for Game Bar.
 
 | Key | Mode | Action | Output |
@@ -89,7 +89,7 @@ Either **Left/Right** Ctrl / Alt / Shift / Win work for combos.
 
 ### Destinations (anonymous / portable)
 
-Defaults are **per Windows user** via `%USERPROFILE%` (or `$env:USERPROFILE` in PowerShell).  
+Defaults are **per Windows user** via `%USERPROFILE%` (or `$env:USERPROFILE` in PowerShell).
 Docs never use a machine username or drive letter — clone works the same on any PC.
 
 *(Maintainers: machine-absolute paths belong in a private `USER-NOTES.md` at repo root — never in this README.)*
@@ -118,7 +118,7 @@ Docs never use a machine username or drive letter — clone works the same on an
 - Override in `webpcap.ini` (gitignored): `outdir`, `viddir`, `audio` = `system` \| `off`, `audio_delay_ms` (optional A/V fine-tune).
 - **Daemon hardening** (`[daemon]` in `webpcap.ini.example`): `tray_icon=1` (visible idle tray), `watchdog=1` + `watchdog_sec=30` (host health), `rehook_on_resume=1` (sleep/wake PrtSc rehook). External `watchdog.ps1` is started by `build.ps1`.
 
-**Stop daemon:** tray → Exit webpcap, or Task Manager → end `AutoHotkey64.exe` (and hidden PowerShell `video-host` / `watchdog` if needed).  
+**Stop daemon:** tray → Exit webpcap, or Task Manager → end `AutoHotkey64.exe` (and hidden PowerShell `video-host` / `watchdog` if needed).
 **Debug:** `.\test_hotkeys.ps1` or `webpcap.ahk --debug`. Logs: `%TEMP%\webpcap.log`, `%TEMP%\webpcap-video.log`, `%TEMP%\webpcap-watchdog.log`.
 
 ---
@@ -129,7 +129,7 @@ Optional path for **your** demos only (not bound to a main hotkey right now). Re
 
 **Requires both:**
 
-1. `.\build.ps1` (video-host + daemon)  
+1. `.\build.ps1` (video-host + daemon)
 2. **Helper loaded on the page** — F12 console must show `[webpcap] canvas helper ready`
 
 If the tooltip says **NO helper**, the hotkey only flipped a flag on the host — **no `Canvas_*.mp4` will be created**.
@@ -182,7 +182,7 @@ javascript:(function(){var s=document.createElement('script');s.src='http://127.
 ```powershell
 cd path\to\webpcap
 Copy-Item .\webpcap.ini.example .\webpcap.ini
-notepad .\webpcap.ini   # set ffmpeg= if not on PATH
+notepad .\webpcap.ini # set ffmpeg= if not on PATH
 ffmpeg -version
 ```
 
@@ -260,82 +260,82 @@ Hotkey-native Windows stills and video: GDI to WebP; full / window / region desk
 
 ## Version History
 
-72726 8:22:34:14 AM CST
+2026-07-27
 • **`update .mds`:** **Daemon hardening** — sleep/wake PrtSc rehook (`rehook_on_resume`); dual watchdog (AHK host health + external `watchdog.ps1` restarts AHK/host); **visible idle tray** + right-click menu (reload / restart host / folders / exit). `build.ps1` starts all three. Ini `[daemon]` in `webpcap.ini.example`. Verified: host kill recovery ~8s; AHK kill recovery ~5s.
 
-72226 11:43:55:28 PM CST
+2026-07-22
 • **`update .mds`:** OPSEC scrub — public README says **portfolio hub root** (no hub folder fingerprint); `build.bat` / `test_hotkeys.bat` use `%ProgramFiles%` for AHK. Hub privacy scan **OK**. Pushed via `start-all` (`main` **`6cdeb1b`**).
 
-71826 9:37:50:12 PM CST
+2026-07-18
 • **`update .mds`:** CAPS/REC **shortcut tags** (and region pick chrome) are **user-visible only** — `Tip()` is a private Gui with `WDA_EXCLUDEFROMCAPTURE` (`ExcludeFromCapture`); rubber-band, size label, pick shield included. Replaces system `ToolTip` that could burn into stills/REC. Restart daemon (`.\build.ps1`) to load.
 
-71626 11:10:08:88 PM CST
+2026-07-16
 • **`update .mds`:** local docs only — private session log standardized as **`webpcap_convo.md`** (gitignored; keep that name). No product/code change; public set unchanged.
 
-71626 10:17:00:87 PM CST
+2026-07-16
 • **`update .mds`:** **A/V sync** for all REC modes (WASAPI `StartedUtc` + mux `-ss` / `-itsoffset`; stop audio before FFmpeg finalize; ini `audio_delay_ms`). **Region pick shield** — full-desktop click sink so rubber-band drag does not highlight text under the cursor (CAPS + REC); User-verified clean `Region_*.mp4`. Private ops guide `INSTRUCTIONS.md` (gitignored). Hub **`start-all.ps1`** pushed public set (`main` **`b9f51ae`**). Daemon = `build.ps1` / `start.ps1 -Repo webpcap` only (no push).
 
-71226 5:29:25:90 PM CST
+2026-07-12
 • **`update .mds`:** hub `start-all.ps1` sync pushed this repo (`main` **`de36402`**) — capture-exclude + canvas demo main-map copy live on GitHub. Reminder: single `start.ps1 -Repo webpcap` = **daemon only** (no push); batch push = **`start-all.ps1`**.
 
-71226 5:25:52:73 PM CST
+2026-07-12
 • **`update .mds`:** canvas demo copy aligned with main REC map — `open-canvas-test.ps1`, `canvas-test.html`, `webpcap-canvas.js` no longer say Alt+Shift+PrtSc (High Contrast trap / parked canvas toggle). Demo page → use Ctrl+Shift / Win / Alt+PrtSc. **User-verified:** full display REC on canvas-test; red REC disc **absent from MP4** (capture-exclude works).
 
-71226 5:20:36:51 PM CST
+2026-07-12
 • **REC indicator not in video:** blinking red taskbar disc still shows while recording; excluded from capture via `SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)` so full / window / region MP4s no longer include the light. Tray blink unchanged. Requires Windows 10 2004+.
 
-71026 2:49:40:70 PM CST
+2026-07-10
 • **`update .mds`:** device scope (Windows desktop); hub **`start-all.ps1`** / `-SyncOnly` batch push without launching daemon.
 
-71026 3:32:25:89 AM CST
+2026-07-10
 • **REC dot position:** taskbar indicator moved **just left of the overflow chevron (`^`)** (`recDotFromRight` 228; was `R-118` / sat on wifi–clock). Daemon reloaded. Nudge pad in `ShowRecDot` if tray layout shifts.
 
-71026 3:28:13:94 AM CST
+2026-07-10
 • **REC status + region reliability:** blinking red taskbar indicator for **all** REC modes (full / window / region); short start toast (~2s). Region REC requires **Enter** after rubber-band (same shared picker as CAPS). PrtSc multi-mod combos via `HotIf` (fixes Ctrl+Alt collapsing to CAPS still). Assets: `assets/rec-on.ico`, `assets/rec-off.ico`. `build.ps1` prefers AutoHotkey64. User-verified: all 3 REC modes + region rubber-band.
 
-70826 7:41:19:05 PM CST
+2026-07-08
 • **Live on GitHub:** `main` `6d456f3` — REC A/V, hotkeys, rubber-band region. Public set only; private docs stayed gitignored.
 
-70826 7:21:50:09 PM CST
+2026-07-08
 • **Pre-push privacy:** public `.md` = `README.md` only (`%USERPROFILE%` paths). Gitignored private set confirmed (`USER-*.md`, ini, NOTES/PLAN/dev/convo/iteration-log). AHK launcher uses `$env:ProgramFiles` (no machine username).
 
-70826 7:14:42:90 PM CST
+2026-07-08
 • **Window REC User-verified** (A+V): `Ctrl+Win+PrtSc` → `Window_*.mp4` with system audio. Docs: **Which REC mode?** (full vs window vs region) — window = focused app only (e.g. browser/Twitch without desktop clutter).
 
-70826 7:07:25:51 PM CST
+2026-07-08
 • **Region rubber-band + fine-tune** (CAPS + REC): cyan frame, edge/corner/move, **`Enter`** confirm / **`Esc`** cancel. **Window REC** = `Ctrl+Win+PrtSc` (avoids Game Bar `Win+Alt+PrtSc` and High Contrast `Alt+Shift+PrtSc`). Window crop uses DWM visible bounds + host clamp (fixes empty `Window_*.mp4` from `-8,-8` shadow). `capture.ps1` CopyFromScreen fix for window/region stills. Fail-fast if gdigrab dies immediately. Game Bar / `Win+G` left free.
 
-70826 6:33:11:20 PM CST
+2026-07-08
 • **Hotkey redesign (right-hand PrtSc):** CAPS = `PrtSc` / `Alt+PrtSc` / `Ctrl+PrtSc` region. REC = full / window / region + system audio; **`End`** stops. Canvas parked.
 
-70826 6:08:17:00 PM CST
+2026-07-08
 • **Display REC + system audio:** one `Display_*.mp4` (H.264 + AAC). WASAPI loopback + FFmpeg mux. Ini `audio=system|off`.
 
-70826 5:26:53:29 PM CST
+2026-07-08
 • **v0.2 complete cycle:** canvas REC verified (cube + canvas-test; no F12 chrome); display REC OK; **sign-in autostart** (`install-autostart.ps1` / `uninstall-autostart.ps1`); helper inject on Rubix + cube demos; start/build footer = “Daemon running in background…” + full hotkey list; dual-doc `USER-*.md`.
 
-70826 4:58:46:99 PM CST
+2026-07-08
 • Full **`USER-*.md`** set for webpcap (NOTES, PLAN, README.dev, convo); maintainers use those for absolute paths.
 
-70826 4:56:58:10 PM CST
+2026-07-08
 • Dual-doc habit: public README stays anonymous; personal absolutes live in private **`USER-*.md`** (gitignored) at repo root.
 
-70826 4:55:01:70 PM CST
+2026-07-08
 • Destinations documented **anonymously** (`%USERPROFILE%` only): **`webpcap CAPS`** + **`webpcap REC`** — no machine usernames in public docs.
 
-70826 4:50:08:33 PM CST
+2026-07-08
 • Output folders renamed: **`webpcap CAPS`** (stills) and **`webpcap REC`** (video); defaults + docs updated.
 
-70826 4:41:50:62 PM CST
+2026-07-08
 • `update .mds` — **How to run** first: **Controls** + **Destinations** (stills WebP vs display/canvas MP4 paths) at the top; v0.2 video docs clarified.
 
 70826 — v0.2 — **video**: `Shift+PrtSc` display MP4; `Alt+Shift+PrtSc` HTML canvas MP4; `video-host.ps1` + `webpcap-canvas.js` + `canvas-test.html`.
 
-70826 5:22:43:53 CST — **live on GitHub** — https://github.com/cxmx-dev/webpcap (`main`, `45a65bf`).
+2026-07-08 — **live on GitHub** — https://github.com/cxmx-dev/webpcap (`main`, `45a65bf`).
 
-70826 5:18:16:75 CST — v0.1.3 **verified**: PrtSc saves real WebP (`RIFF`/`WEBPVP8`); `capture.ps1`/`clip.ps1`; `smoke-test.ps1` PASS.
+2026-07-08 — v0.1.3 **verified**: PrtSc saves real WebP (`RIFF`/`WEBPVP8`); `capture.ps1`/`clip.ps1`; `smoke-test.ps1` PASS.
 
-70826 5:18:16:75 CST — v0.1.3 — **RunWait fix** (AHK v2: single `Target` string, not two-arg form) + `disable-snipping.ps1` + `$` hotkey hooks.
+2026-07-08 — v0.1.3 — **RunWait fix** (AHK v2: single `Target` string, not two-arg form) + `disable-snipping.ps1` + `$` hotkey hooks.
 
 v0.1.2 — RunWait comma attempt (still wrong in AHK v2).
 

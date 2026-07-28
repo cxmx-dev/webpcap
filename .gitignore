@@ -1,4 +1,4 @@
-﻿*.exe
+*.exe
 *.png
 *.webp
 _project.ps1
@@ -20,3 +20,6 @@ Thumbs.db
 desktop.ini
 
 disable-snipping.ps1
+
+# Hub-only kind marker (never publish)
+hub.kind
