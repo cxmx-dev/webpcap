@@ -1,0 +1,20 @@
+# OPSEC: fail CI when public text still carries timezone strings (CST/EST/…, full names, UTC±N).
+name: timezone-sanitize
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  timezone-sanitize:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check for timezone strings (public text)
+        shell: bash
+        run: |
+          chmod +x scripts/sanitize-timezones.sh
+          ./scripts/sanitize-timezones.sh --check .
