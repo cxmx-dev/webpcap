@@ -270,9 +270,6 @@ Hotkey-native Windows stills and video: GDI to WebP; full / window / region desk
 • **`update .mds`:** CAPS/REC **shortcut tags** (and region pick chrome) are **user-visible only** — `Tip()` is a private Gui with `WDA_EXCLUDEFROMCAPTURE` (`ExcludeFromCapture`); rubber-band, size label, pick shield included. Replaces system `ToolTip` that could burn into stills/REC. Restart daemon (`.\build.ps1`) to load.
 
 2026-07-16
-• **`update .mds`:** local docs only — private session log standardized as **`webpcap_convo.md`** (gitignored; keep that name). No product/code change; public set unchanged.
-
-2026-07-16
 • **`update .mds`:** **A/V sync** for all REC modes (WASAPI `StartedUtc` + mux `-ss` / `-itsoffset`; stop audio before FFmpeg finalize; ini `audio_delay_ms`). **Region pick shield** — full-desktop click sink so rubber-band drag does not highlight text under the cursor (CAPS + REC); User-verified clean `Region_*.mp4`. Private ops guide `INSTRUCTIONS.md` (gitignored). Hub **`start-all.ps1`** pushed public set (`main` **`b9f51ae`**). Daemon = `build.ps1` / `start.ps1 -Repo webpcap` only (no push).
 
 2026-07-12
@@ -316,12 +313,6 @@ Hotkey-native Windows stills and video: GDI to WebP; full / window / region desk
 
 2026-07-08
 • Full **`USER-*.md`** set for webpcap (NOTES, PLAN, README.dev, convo); maintainers use those for absolute paths.
-
-2026-07-08
-• Dual-doc habit: public README stays anonymous; personal absolutes live in private **`USER-*.md`** (gitignored) at repo root.
-
-2026-07-08
-• Destinations documented **anonymously** (`%USERPROFILE%` only): **`webpcap CAPS`** + **`webpcap REC`** — no machine usernames in public docs.
 
 2026-07-08
 • Output folders renamed: **`webpcap CAPS`** (stills) and **`webpcap REC`** (video); defaults + docs updated.
