@@ -42,6 +42,11 @@ $tzPattern = '(?i)\b(CST|CDT|EST|EDT|MST|MDT|PST|PDT)\b|(?i)\b(Central|Eastern|M
 
 function Test-Excluded([string]$rel) {
   $rel = $rel -replace '\\','/'
+  $base = [System.IO.Path]::GetFileName($rel)
+  # Always skip the OPSEC tools themselves (patterns live in source → self-hit otherwise)
+  if ($base -in @('sanitize-timezones.sh', 'sanitize-timezones.ps1', 'timezone-sanitize.yml')) {
+    return $true
+  }
   foreach ($e in $excludeRel) {
     if ($rel -eq $e) { return $true }
   }

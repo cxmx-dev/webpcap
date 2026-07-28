@@ -19,6 +19,7 @@ cd "$ROOT"
 # Self + vendor exclusions (paths relative to ROOT)
 EXCLUDE_GLOBS=(
   './scripts/sanitize-timezones.sh'
+  './scripts/sanitize-timezones.ps1'
   './.github/workflows/timezone-sanitize.yml'
   './node_modules/*'
   './.git/*'
@@ -43,7 +44,12 @@ TZ_REGEX='(?i)\b(CST|CDT|EST|EDT|MST|MDT|PST|PDT)\b|(?i)\b(Central|Eastern|Mount
 
 is_excluded() {
   local f="$1"
-  local g
+  local base g
+  base="$(basename "$f")"
+  # Always skip the OPSEC tools themselves (patterns live in source → self-hit otherwise)
+  case "$base" in
+    sanitize-timezones.sh|sanitize-timezones.ps1|timezone-sanitize.yml) return 0 ;;
+  esac
   for g in "${EXCLUDE_GLOBS[@]}"; do
     # shellcheck disable=SC2254
     case "$f" in
