@@ -18,7 +18,7 @@ Regular PowerShell is enough (Admin only for first-time FFmpeg/AHK install).
 
 **Tray:** a system-tray icon means the daemon is up (idle = dim / `rec-off`; REC = red blink). Right-click → reload daemon, restart video-host, open CAPS/REC folders, or exit.
 **Sleep / wake:** after resume, AHK rehooks PrtSc (Reload when not recording; soft rehook if REC is active).
-**Self-heal:** AHK pings video-host and restarts it if down; external `watchdog.ps1` restarts AHK and/or host if either dies.
+**Self-heal:** AHK pings video-host and restarts it if down (**not while a REC is active** — stop must finish cleanly); external `watchdog.ps1` restarts AHK and/or host if either dies, and clears stuck REC `ffmpeg` leftovers.
 
 ### Autostart (sign-in after power-on / reboot)
 
@@ -86,7 +86,9 @@ Docs never use a machine username or drive letter — clone works the same on an
 - Override in `webpcap.ini` (gitignored): `outdir`, `viddir`, `audio` = `system` \| `off`, `audio_delay_ms`.
 
 **Stop daemon:** tray → Exit webpcap, or Task Manager → end `AutoHotkey64.exe`.
-**Debug:** `.\test_hotkeys.ps1` or `webpcap.ahk --debug`. Logs: `%TEMP%\webpcap.log`, `%TEMP%\webpcap-video.log`.
+**Debug:** `.\test_hotkeys.ps1` or `webpcap.ahk --debug`. Logs: `%TEMP%\webpcap.log`, `%TEMP%\webpcap-video.log` (look for `warmup`, `orphan`, `mux A/V sync`, `display saved`).
+
+If **region REC** fails, check the video log; common past cause was a stuck capture process after a short stop timeout — current builds wait long enough for stop/mux and refuse “REC on” until frames actually write.
 
 ---
 
@@ -163,3 +165,18 @@ Hotkey-native Windows stills and video: GDI to WebP; full / window / region desk
 ## Portfolio blurb
 
 *webpcap* is a media pipeline micro-tool: PrtSc-family stills as WebP; full / window / region REC with system audio in one MP4 — Clipchamp-like drag framing without a heavy UI, without fighting Game Bar or High Contrast shortcuts.
+
+## Version History
+
+2026-08-05
+• Region / full / window REC harden: live capture no longer uses faststart (empty file until finalize); warmup confirms frames before “REC on”; stop waits long enough for finalize + mux; watchdogs do not kill the host mid-REC; stuck REC ffmpeg cleaned on host restart.
+• Docs: debug log hints + self-heal note (no host restart while recording).
+
+2026-07-27
+• Daemon hardening: sleep/wake rehook, dual watchdog, visible idle tray.
+
+2026-07-18
+• Private CAPS/REC shortcut tags + region chrome capture-exclude (user-only feedback).
+
+2026-07-16
+• A/V sync mux offset; region pick shield (no text select under drag).

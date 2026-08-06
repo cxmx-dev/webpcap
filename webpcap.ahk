@@ -184,7 +184,9 @@ SetupHostWatchdog() {
 HostWatchdogTick() {
     try {
         global SelectingRegion, RecBlinking, HostHealthy
-        if (SelectingRegion)
+        ; Never restart host during region pick or active REC — stop holds the
+        ; HTTP listener, so /health can fail and a restart would kill ffmpeg mid-write.
+        if (SelectingRegion || RecBlinking)
             return
         was := HostHealthy
         ok := EnsureHostAlive(false)
@@ -247,6 +249,18 @@ RestartVideoHost() {
         }
         try FileDelete(pidFile)
         Sleep 400
+    }
+    ; Kill stuck gdigrab leftovers so next REC does not hang on a zombie grab
+    try {
+        for proc in ComObjGet("winmgmts:").ExecQuery("Select ProcessId,CommandLine from Win32_Process where Name='ffmpeg.exe'") {
+            cl := proc.CommandLine
+            if (cl != "" && InStr(cl, "webpcap_rec_")) {
+                try ProcessClose(proc.ProcessId)
+                Log("watchdog: killed orphan ffmpeg " proc.ProcessId)
+            }
+        }
+    } catch as e {
+        Log("watchdog: orphan ffmpeg scan " e.Message)
     }
     ; Same launch shape as build.ps1 (quoted -File / -Root)
     args := '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' host '" -Root "' A_ScriptDir '"'
@@ -418,7 +432,7 @@ VidToggle(mode) {
         }
 
         if (mode = "display") {
-            body := HttpPost("http://127.0.0.1:" VIDPORT "/display/toggle")
+            body := HttpPost("http://127.0.0.1:" VIDPORT "/display/toggle", 25000)
             return VidTipFromBody(body, "display")
         }
         if (mode = "window") {
@@ -429,7 +443,7 @@ VidToggle(mode) {
                 return Tip("window too small to REC", 2500)
             ww := ww - (ww & 1), wh := wh - (wh & 1)
             url := "http://127.0.0.1:" VIDPORT "/window/toggle?x=" wx "&y=" wy "&w=" ww "&h=" wh
-            body := HttpPost(url)
+            body := HttpPost(url, 25000)
             return VidTipFromBody(body, "window")
         }
         if (mode = "region") {
@@ -460,14 +474,22 @@ VidRegionStart() {
     Tip("starting region REC...", 0)
     url := "http://127.0.0.1:" VIDPORT "/region/toggle?x=" x "&y=" y "&w=" w "&h=" h
     Log("region REC post " x "," y " " w "x" h)
-    body := HttpPost(url)
+    ; Long timeout: host warms gdigrab before answering (orphan cleanup + frame check)
+    body := HttpPost(url, 30000)
     Log("region REC response: " (body = "" ? "(empty)" : SubStr(body, 1, 180)))
     return VidTipFromBody(body, "region")
 }
 
 VidStop() {
     global VIDPORT, DBG, VIDDIR
-    body := HttpPost("http://127.0.0.1:" VIDPORT "/rec/stop")
+    ; Stop can take several seconds (ffmpeg finalize + A/V mux). Old 8s timeout
+    ; aborted mid-stop → host restart → zombie ffmpeg → next region REC failed.
+    body := HttpPost("http://127.0.0.1:" VIDPORT "/rec/stop", 60000)
+    if (body = "") {
+        Log("video-host not reachable on port " VIDPORT " during stop — retry once")
+        Sleep 800
+        body := HttpPost("http://127.0.0.1:" VIDPORT "/rec/stop", 60000)
+    }
     if (body = "") {
         Log("video-host not reachable on port " VIDPORT)
         RecIndicatorStop()
@@ -506,7 +528,9 @@ VidTipFromBody(body, mode) {
     RecIndicatorStop()
     if (ok)
         Tip(DBG ? "REC saved -> " VIDDIR : "REC saved (video+audio .mp4)", DBG ? 0 : 2500)
-    else if (InStr(body, "ffmpeg exited") || InStr(body, "bad crop"))
+    else if (InStr(body, "hung") || InStr(body, "no video frames"))
+        Tip("REC failed: capture hung - try again (End if stuck)", 4500)
+    else if (InStr(body, "ffmpeg exited") || InStr(body, "bad crop") || InStr(body, "grab failed"))
         Tip("REC failed: bad window crop - try region REC or borderless window", 4500)
     else {
         Log("REC fail body: " SubStr(body, 1, 240))
@@ -703,11 +727,14 @@ HttpGet(url) {
     }
 }
 
-HttpPost(url) {
+; receiveMs: default 8s for light posts; REC start/stop need 25–60s (warmup + mux).
+HttpPost(url, receiveMs := 8000) {
     try {
         http := ComObject("WinHttp.WinHttpRequest.5.1")
         http.Open("POST", url, false)
-        http.SetTimeouts(1000, 1000, 8000, 8000)
+        ; resolve, connect, send, receive (ms)
+        recv := receiveMs > 1000 ? receiveMs : 8000
+        http.SetTimeouts(2000, 2000, 15000, recv)
         http.Send()
         if (http.Status < 200 || http.Status >= 300) {
             Log("HTTP " http.Status " " url)

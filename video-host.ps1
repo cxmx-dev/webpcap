@@ -50,6 +50,7 @@ $script:DisplayAudioWav = $null
 $script:DisplayHasAudio = $false
 $script:DisplayAudioStartUtc = [datetime]::MinValue
 $script:DisplayVideoStartUtc = [datetime]::MinValue
+$script:DisplayErrFile = $null      # ffmpeg stderr path for failed REC diagnosis
 $script:RecKind = $null             # display | window | region
 $script:CanvasRecord = $false
 $script:CanvasSeq = 0
@@ -104,6 +105,46 @@ function Format-FfmpegSeconds([double]$sec) {
     return $sec.ToString('0.000', [System.Globalization.CultureInfo]::InvariantCulture)
 }
 
+function Invoke-FfmpegArgs([string]$argLine, [int]$timeoutMs = 120000) {
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $Ffmpeg
+    $psi.Arguments = $argLine
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+    $p = New-Object System.Diagnostics.Process
+    $p.StartInfo = $psi
+    if (-not $p.Start()) { return $null }
+    if (-not $p.WaitForExit($timeoutMs)) {
+        try { $p.Kill() } catch {}
+        try { $p.WaitForExit(3000) | Out-Null } catch {}
+        Write-Log "ffmpeg tool timeout ${timeoutMs}ms"
+        try { $p.Dispose() } catch {}
+        return -1
+    }
+    $code = $p.ExitCode
+    try { $p.Dispose() } catch {}
+    return $code
+}
+
+function Convert-TempVideoToMp4([string]$videoPath, [string]$finalPath) {
+    # Prefer remux with +faststart for players; fall back to move/copy.
+    $argLine = "-hide_banner -loglevel error -y -i `"$videoPath`" -c:v copy -an -movflags +faststart `"$finalPath`""
+    $code = Invoke-FfmpegArgs $argLine 90000
+    if ($code -eq 0 -and (Get-FileSizeSafe $finalPath) -gt 1024) {
+        return $true
+    }
+    try {
+        Move-Item -Force -LiteralPath $videoPath -Destination $finalPath
+        if ((Get-FileSizeSafe $finalPath) -gt 1024) { return $true }
+    } catch {}
+    try {
+        Copy-Item -Force -LiteralPath $videoPath -Destination $finalPath
+        return ((Get-FileSizeSafe $finalPath) -gt 1024)
+    } catch {
+        return $false
+    }
+}
+
 function Merge-DisplayAv {
     param(
         [string]$videoPath,
@@ -111,17 +152,21 @@ function Merge-DisplayAv {
         [string]$finalPath,
         [double]$AudioLeadSec = 0
     )
-    if (-not (Test-Path $videoPath)) { return $false }
-    $hasWav = $wavPath -and (Test-Path $wavPath) -and ((Get-Item $wavPath).Length -gt 128)
+    if (-not (Test-Path -LiteralPath $videoPath)) { return $false }
+    $hasWav = $wavPath -and (Test-Path -LiteralPath $wavPath) -and ((Get-Item -LiteralPath $wavPath).Length -gt 128)
     if (-not $hasWav) {
-        Move-Item -Force $videoPath $finalPath
-        $sz = (Get-Item $finalPath).Length
+        if (-not (Convert-TempVideoToMp4 $videoPath $finalPath)) {
+            Write-Log ('display save video-only failed: {0}' -f $videoPath)
+            return $false
+        }
+        $sz = (Get-Item -LiteralPath $finalPath).Length
         Write-Log ('display saved (video only): {0} ({1} bytes)' -f $finalPath, $sz)
         return $true
     }
     # Align streams (file t=0 for both without offset is wrong when start clocks differ):
-    #   AudioLeadSec > 0 → loopback began before gdigrab → skip that much from WAV head (-ss).
-    #   AudioLeadSec < 0 → video began first → advance audio (negative -itsoffset).
+    #   AudioLeadSec = videoStart - audioStart (positive = audio began first).
+    #   AudioLeadSec > 0 → skip that much from WAV head (-ss).
+    #   AudioLeadSec < 0 → video began first (normal now) → delay audio (+itsoffset).
     # audio_delay_ms (ini): extra fine-tune after auto offset (positive = sound later / more skip).
     $adj = $AudioLeadSec + ($AudioDelayMs / 1000.0)
     if ($adj -gt 0.005) {
@@ -129,29 +174,127 @@ function Merge-DisplayAv {
         $argLine = "-hide_banner -loglevel error -y -i `"$videoPath`" -ss $ss -i `"$wavPath`" -c:v copy -c:a aac -b:a 192k -shortest -movflags +faststart `"$finalPath`""
         Write-Log ("mux A/V sync: skip audio head {0}s (lead={1:0.000} delay_ms={2})" -f $ss, $AudioLeadSec, $AudioDelayMs)
     } elseif ($adj -lt -0.005) {
-        # Negative itsoffset advances the audio stream so late-start audio lines up with video.
-        $off = Format-FfmpegSeconds $adj
+        # Video first: delay audio so WAV t=0 lines up with when loopback actually started.
+        $off = Format-FfmpegSeconds (-$adj)
         $argLine = "-hide_banner -loglevel error -y -i `"$videoPath`" -itsoffset $off -i `"$wavPath`" -c:v copy -c:a aac -b:a 192k -shortest -movflags +faststart `"$finalPath`""
-        Write-Log ("mux A/V sync: advance audio {0}s (lead={1:0.000} delay_ms={2})" -f $off, $AudioLeadSec, $AudioDelayMs)
+        Write-Log ("mux A/V sync: delay audio {0}s (lead={1:0.000} delay_ms={2})" -f $off, $AudioLeadSec, $AudioDelayMs)
     } else {
         $argLine = "-hide_banner -loglevel error -y -i `"$videoPath`" -i `"$wavPath`" -c:v copy -c:a aac -b:a 192k -shortest -movflags +faststart `"$finalPath`""
         Write-Log ("mux A/V sync: no offset (lead={0:0.000} delay_ms={1})" -f $AudioLeadSec, $AudioDelayMs)
     }
-    $p = Start-Process -FilePath $Ffmpeg -ArgumentList $argLine -Wait -PassThru -WindowStyle Hidden
-    $code = if ($null -eq $p) { 'null' } else { $p.ExitCode }
-    if ($null -eq $p -or $p.ExitCode -ne 0 -or -not (Test-Path $finalPath)) {
+    $code = Invoke-FfmpegArgs $argLine 120000
+    if ($null -eq $code -or $code -ne 0 -or -not (Test-Path -LiteralPath $finalPath)) {
         Write-Log ('display mux failed exit={0} - falling back to video only' -f $code)
-        try { Move-Item -Force $videoPath $finalPath } catch { return $false }
-        Write-Log ('display saved (video only fallback): {0}' -f $finalPath)
-        return $true
+        if (Convert-TempVideoToMp4 $videoPath $finalPath) {
+            Write-Log ('display saved (video only fallback): {0}' -f $finalPath)
+            return $true
+        }
+        return $false
     }
-    $sz = (Get-Item $finalPath).Length
+    $sz = (Get-Item -LiteralPath $finalPath).Length
     Write-Log ('display saved (video+audio): {0} ({1} bytes)' -f $finalPath, $sz)
     return $true
 }
 
 function Test-DesktopRecording {
     return ($null -ne $script:DisplayProc -and -not $script:DisplayProc.HasExited)
+}
+
+function Get-FileSizeSafe([string]$path) {
+    try {
+        if ($path -and (Test-Path -LiteralPath $path)) { return (Get-Item -LiteralPath $path).Length }
+    } catch {}
+    return 0
+}
+
+function Reset-RecState {
+    $script:DisplayProc = $null
+    $script:DisplayOut = $null
+    $script:DisplayFinal = $null
+    $script:DisplayAudioWav = $null
+    $script:DisplayHasAudio = $false
+    $script:DisplayAudioStartUtc = [datetime]::MinValue
+    $script:DisplayVideoStartUtc = [datetime]::MinValue
+    $script:DisplayErrFile = $null
+    $script:RecKind = $null
+}
+
+# Kill leftover ffmpeg processes from prior crashed/stuck REC sessions (command line has webpcap_rec_)
+function Stop-OrphanRecFfmpeg {
+    param([int]$ExceptPid = 0)
+    $killed = 0
+    try {
+        $procs = Get-CimInstance Win32_Process -Filter "Name = 'ffmpeg.exe'" -ErrorAction SilentlyContinue
+        foreach ($proc in @($procs)) {
+            if (-not $proc) { continue }
+            if ($ExceptPid -and [int]$proc.ProcessId -eq $ExceptPid) { continue }
+            $cl = [string]$proc.CommandLine
+            if ($cl -and $cl -match 'webpcap_rec_') {
+                try {
+                    Stop-Process -Id ([int]$proc.ProcessId) -Force -ErrorAction Stop
+                    $killed++
+                    Write-Log ("orphan ffmpeg killed pid={0}" -f $proc.ProcessId)
+                } catch {
+                    Write-Log ("orphan ffmpeg kill failed pid={0}: {1}" -f $proc.ProcessId, $_)
+                }
+            }
+        }
+    } catch {
+        Write-Log "orphan ffmpeg scan: $_"
+    }
+    return $killed
+}
+
+function Clear-StaleRecTemps {
+    # Drop abandoned temps older than 2 hours (or zero-byte leftovers)
+    try {
+        $cutoff = (Get-Date).AddHours(-2)
+        Get-ChildItem -Path $env:TEMP -Filter 'webpcap_rec_*' -File -ErrorAction SilentlyContinue | ForEach-Object {
+            $drop = ($_.Length -lt 64) -or ($_.LastWriteTime -lt $cutoff)
+            if ($drop) {
+                try { Remove-Item -Force -LiteralPath $_.FullName -ErrorAction SilentlyContinue } catch {}
+            }
+        }
+    } catch {}
+}
+
+function Stop-FfmpegGraceful {
+    param(
+        [System.Diagnostics.Process]$Process,
+        [int]$GraceMs = 8000
+    )
+    if ($null -eq $Process) { return @{ exited = $true; killed = $false; exitCode = $null } }
+    if ($Process.HasExited) {
+        return @{ exited = $true; killed = $false; exitCode = $Process.ExitCode }
+    }
+    # Prefer stdin 'q' + newline. MKV temps do not need long moov finalize; keep total under AHK timeout.
+    try {
+        if ($Process.StartInfo.RedirectStandardInput) {
+            $Process.StandardInput.WriteLine('q')
+            $Process.StandardInput.Flush()
+        }
+    } catch {
+        Write-Log "ffmpeg stdin q: $_"
+    }
+    $qWait = [Math]::Min(3500, $GraceMs)
+    if ($Process.WaitForExit($qWait)) {
+        return @{ exited = $true; killed = $false; exitCode = $Process.ExitCode }
+    }
+    try {
+        if ($Process.StartInfo.RedirectStandardInput) {
+            $Process.StandardInput.Close()
+        }
+    } catch {}
+    $left = [Math]::Max(1500, $GraceMs - $qWait)
+    if ($Process.WaitForExit($left)) {
+        return @{ exited = $true; killed = $false; exitCode = $Process.ExitCode }
+    }
+    Write-Log ("ffmpeg stop timeout after {0}ms - force kill pid={1}" -f $GraceMs, $Process.Id)
+    try { $Process.Kill() } catch { Write-Log "ffmpeg Kill: $_" }
+    try { $Process.WaitForExit(3000) | Out-Null } catch {}
+    $code = $null
+    try { if ($Process.HasExited) { $code = $Process.ExitCode } } catch {}
+    return @{ exited = [bool]$Process.HasExited; killed = $true; exitCode = $code }
 }
 
 function Stop-DisplayRecord {
@@ -171,38 +314,30 @@ function Stop-DisplayRecord {
             $audioLeadSec, $script:DisplayAudioStartUtc, $script:DisplayVideoStartUtc)
     }
 
-    # Stop audio FIRST so it does not keep recording while ffmpeg finalizes the MP4
+    # Stop audio FIRST so it does not keep recording while ffmpeg finalizes
     Stop-DisplayAudio
 
+    $stopInfo = @{ exited = $true; killed = $false; exitCode = $null }
     try {
-        if ($null -ne $p -and -not $p.HasExited) {
-            try {
-                $p.StandardInput.WriteLine('q')
-                $p.StandardInput.Flush()
-            } catch {}
-            if (-not $p.WaitForExit(8000)) {
-                try { $p.Kill() } catch {}
-                $p.WaitForExit(2000) | Out-Null
-            }
-        }
+        $preSize = Get-FileSizeSafe $tmpVid
+        Write-Log ("rec stop begin kind={0} tmpSize={1} pid={2}" -f $kind, $preSize, $(if ($p) { $p.Id } else { 0 }))
+        # Keep under AHK 60s stop budget (q + mux). Prefer clean q for moov atom.
+        $stopInfo = Stop-FfmpegGraceful -Process $p -GraceMs 10000
+        Write-Log ("rec stop ffmpeg exited={0} killed={1} code={2} tmpSize={3}" -f `
+            $stopInfo.exited, $stopInfo.killed, $stopInfo.exitCode, (Get-FileSizeSafe $tmpVid))
     } catch {
         Write-Log "rec stop error: $_"
     } finally {
         if ($null -ne $p) { try { $p.Dispose() } catch {} }
-        $script:DisplayProc = $null
-        $script:DisplayOut = $null
-        $script:DisplayFinal = $null
-        $script:DisplayAudioWav = $null
-        $script:DisplayHasAudio = $false
-        $script:DisplayAudioStartUtc = [datetime]::MinValue
-        $script:DisplayVideoStartUtc = [datetime]::MinValue
-        $script:RecKind = $null
+        Reset-RecState
     }
 
-    if (-not $tmpVid -or -not (Test-Path $tmpVid) -or ((Get-Item $tmpVid).Length -lt 64)) {
-        Write-Log ('rec stop: no video file (kind={0} tmp={1})' -f $kind, $tmpVid)
-        if ($wav) { try { Remove-Item -Force $wav -ErrorAction SilentlyContinue } catch {} }
-        try { if ($tmpVid -and (Test-Path $tmpVid)) { Remove-Item -Force $tmpVid -ErrorAction SilentlyContinue } } catch {}
+    $tmpSize = Get-FileSizeSafe $tmpVid
+    # Reject empty stubs; short clips after clean q are multi-KB+
+    if (-not $tmpVid -or $tmpSize -lt 1024) {
+        Write-Log ('rec stop: no usable video (kind={0} tmp={1} size={2} killed={3})' -f $kind, $tmpVid, $tmpSize, $stopInfo.killed)
+        if ($wav) { try { Remove-Item -Force -LiteralPath $wav -ErrorAction SilentlyContinue } catch {} }
+        try { if ($tmpVid -and (Test-Path -LiteralPath $tmpVid)) { Remove-Item -Force -LiteralPath $tmpVid -ErrorAction SilentlyContinue } } catch {}
         return $false
     }
     if (-not $final) {
@@ -215,8 +350,8 @@ function Stop-DisplayRecord {
     }
 
     $ok = Merge-DisplayAv -videoPath $tmpVid -wavPath $wav -finalPath $final -AudioLeadSec $audioLeadSec
-    try { if (Test-Path $tmpVid) { Remove-Item -Force $tmpVid -ErrorAction SilentlyContinue } } catch {}
-    try { if ($wav -and (Test-Path $wav)) { Remove-Item -Force $wav -ErrorAction SilentlyContinue } } catch {}
+    try { if (Test-Path -LiteralPath $tmpVid) { Remove-Item -Force -LiteralPath $tmpVid -ErrorAction SilentlyContinue } } catch {}
+    try { if ($wav -and (Test-Path -LiteralPath $wav)) { Remove-Item -Force -LiteralPath $wav -ErrorAction SilentlyContinue } } catch {}
     return $ok
 }
 
@@ -224,6 +359,94 @@ function Get-Even([int]$n) {
     if ($n -lt 2) { return 2 }
     if ($n % 2 -ne 0) { return $n - 1 }
     return $n
+}
+
+function Get-VirtualScreen {
+    # gdigrab desktop coords are virtual-desktop origin (can be negative on multi-monitor)
+    try {
+        Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue | Out-Null
+        $vs = [System.Windows.Forms.SystemInformation]::VirtualScreen
+        return @{ X = [int]$vs.X; Y = [int]$vs.Y; W = [int]$vs.Width; H = [int]$vs.Height }
+    } catch {
+        return @{ X = 0; Y = 0; W = 0; H = 0 }
+    }
+}
+
+function Clamp-CropToVirtual {
+    param([int]$X, [int]$Y, [int]$W, [int]$H)
+    $vs = Get-VirtualScreen
+    if ($vs.W -lt 16 -or $vs.H -lt 16) {
+        return @{ X = $X; Y = $Y; W = $W; H = $H; clamped = $false }
+    }
+    $vx = $vs.X; $vy = $vs.Y; $vw = $vs.W; $vh = $vs.H
+    $x2 = $X + $W
+    $y2 = $Y + $H
+    if ($X -lt $vx) { $X = $vx }
+    if ($Y -lt $vy) { $Y = $vy }
+    if ($x2 -gt ($vx + $vw)) { $x2 = $vx + $vw }
+    if ($y2 -gt ($vy + $vh)) { $y2 = $vy + $vh }
+    $W = $x2 - $X
+    $H = $y2 - $Y
+    if ($W -lt 1) { $W = 1 }
+    if ($H -lt 1) { $H = 1 }
+    $W = Get-Even $W
+    $H = Get-Even $H
+    return @{ X = $X; Y = $Y; W = $W; H = $H; clamped = $true }
+}
+
+function Fail-DesktopStart {
+    param(
+        [System.Diagnostics.Process]$Proc,
+        [string]$TmpVid,
+        [string]$TmpWav,
+        [string]$Error,
+        [string]$Kind
+    )
+    try {
+        if ($null -ne $Proc -and -not $Proc.HasExited) {
+            try { $Proc.Kill() } catch {}
+            try { $Proc.WaitForExit(1500) | Out-Null } catch {}
+        }
+    } catch {}
+    if ($null -ne $Proc) { try { $Proc.Dispose() } catch {} }
+    Stop-DisplayAudio
+    try { if ($TmpWav -and (Test-Path -LiteralPath $TmpWav)) { Remove-Item -Force -LiteralPath $TmpWav -ErrorAction SilentlyContinue } } catch {}
+    try { if ($TmpVid -and (Test-Path -LiteralPath $TmpVid)) { Remove-Item -Force -LiteralPath $TmpVid -ErrorAction SilentlyContinue } } catch {}
+    Reset-RecState
+    [void](Stop-OrphanRecFfmpeg)
+    return @{ ok = $false; error = $Error; recording = $false; mode = $Kind }
+}
+
+function Start-LoopbackAudio([string]$tmpWav) {
+    if ($AudioMode -ne 'system') { return }
+    if (-not ('WasapiLoopbackRecorder' -as [type])) {
+        Write-Log 'loopback type unavailable - rec will be video-only'
+        return
+    }
+    try {
+        $rec = New-Object WasapiLoopbackRecorder
+        $rec.Start($tmpWav)
+        $script:DisplayAudio = $rec
+        $script:DisplayAudioWav = $tmpWav
+        $script:DisplayHasAudio = $true
+        try {
+            $su = $rec.StartedUtc
+            if ($su -and $su -ne [datetime]::MinValue) {
+                $script:DisplayAudioStartUtc = $su
+            } else {
+                $script:DisplayAudioStartUtc = [datetime]::UtcNow
+            }
+        } catch {
+            $script:DisplayAudioStartUtc = [datetime]::UtcNow
+        }
+        Write-Log "loopback start: $tmpWav"
+    } catch {
+        Write-Log "loopback start failed: $_ - rec will be video-only"
+        $script:DisplayAudio = $null
+        $script:DisplayAudioWav = $null
+        $script:DisplayHasAudio = $false
+        $script:DisplayAudioStartUtc = [datetime]::MinValue
+    }
 }
 
 # kind: display | window | region
@@ -247,17 +470,23 @@ function Start-DesktopRecord {
         return @{ ok = $false; error = 'ffmpeg not found' }
     }
 
+    # Previous stuck REC left zombie ffmpeg + empty temps; clear before new grab
+    [void](Stop-OrphanRecFfmpeg)
+    Clear-StaleRecTemps
+
     $useCrop = ($Kind -eq 'window' -or $Kind -eq 'region')
     if ($useCrop) {
-        # gdigrab rejects negative offsets (Win11 DWM shadow often reports -8,-8)
+        # gdigrab rejects negative offsets on some builds; Win11 DWM shadow often reports -8,-8
         if ($X -lt 0) { $W += $X; $X = 0 }
         if ($Y -lt 0) { $H += $Y; $Y = 0 }
         if ($W -lt 1) { $W = 1 }
         if ($H -lt 1) { $H = 1 }
         $W = Get-Even $W
         $H = Get-Even $H
+        $clamped = Clamp-CropToVirtual -X $X -Y $Y -W $W -H $H
+        $X = $clamped.X; $Y = $clamped.Y; $W = $clamped.W; $H = $clamped.H
         if ($W -lt 16 -or $H -lt 16) {
-            return @{ ok = $false; error = 'region too small (min 16x16 even)' }
+            return @{ ok = $false; error = 'region too small (min 16x16 even)'; recording = $false; mode = $Kind }
         }
     }
 
@@ -268,6 +497,8 @@ function Start-DesktopRecord {
         default { 'Display' }
     }
     $final = Join-Path $VidDir ("{0}_{1}.mp4" -f $prefix, $stamp)
+    # Live temp: plain MP4 WITHOUT +faststart. faststart holds ~0 bytes until clean finalize
+    # (kill/crash → empty file → "no video"). Final mux still applies +faststart for players.
     $tmpVid = Join-Path $env:TEMP ("webpcap_rec_{0}.mp4" -f $stamp)
     $tmpWav = Join-Path $env:TEMP ("webpcap_rec_{0}.wav" -f $stamp)
 
@@ -279,6 +510,7 @@ function Start-DesktopRecord {
     $script:DisplayAudio = $null
     $script:DisplayAudioStartUtc = [datetime]::MinValue
     $script:DisplayVideoStartUtc = [datetime]::MinValue
+    $script:DisplayErrFile = $null
 
     # gdigrab: full desktop or crop (virtual desktop coords; even size for libx264)
     if ($useCrop) {
@@ -288,80 +520,55 @@ function Start-DesktopRecord {
     }
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $Ffmpeg
-    $psi.Arguments = "-hide_banner -loglevel error -y $grab -c:v libx264 -preset veryfast -pix_fmt yuv420p -crf $Crf -an -movflags +faststart `"$tmpVid`""
+    # -flush_packets 1: surface bytes during record so warmup can detect a live grab
+    $psi.Arguments = "-hide_banner -loglevel error -y $grab -c:v libx264 -preset veryfast -pix_fmt yuv420p -crf $Crf -an -flush_packets 1 `"$tmpVid`""
     $psi.UseShellExecute = $false
     $psi.RedirectStandardInput = $true
     $psi.CreateNoWindow = $true
     $p = New-Object System.Diagnostics.Process
     $p.StartInfo = $psi
 
-    # Prepare audio + process first, then start both with minimal gap.
-    # Measure StartedUtc vs Process.Start so mux can -ss / -itsoffset the skew.
-    # Stop path ends audio before ffmpeg finalizes (was a major end-side desync).
-    if ($AudioMode -eq 'system' -and ('WasapiLoopbackRecorder' -as [type])) {
-        try {
-            $rec = New-Object WasapiLoopbackRecorder
-            $rec.Start($tmpWav)
-            $script:DisplayAudio = $rec
-            $script:DisplayAudioWav = $tmpWav
-            $script:DisplayHasAudio = $true
-            try {
-                $su = $rec.StartedUtc
-                if ($su -and $su -ne [datetime]::MinValue) {
-                    $script:DisplayAudioStartUtc = $su
-                } else {
-                    $script:DisplayAudioStartUtc = [datetime]::UtcNow
-                }
-            } catch {
-                $script:DisplayAudioStartUtc = [datetime]::UtcNow
-            }
-            Write-Log "loopback start: $tmpWav"
-        } catch {
-            Write-Log "loopback start failed: $_ - rec will be video-only"
-            $script:DisplayAudio = $null
-            $script:DisplayAudioWav = $null
-            $script:DisplayHasAudio = $false
-            $script:DisplayAudioStartUtc = [datetime]::MinValue
-        }
-    } elseif ($AudioMode -eq 'system') {
-        Write-Log 'loopback type unavailable - rec will be video-only'
-    }
-
+    # Video first → warmup → then audio (avoids long audio lead during warmup; cleaner fail path)
     if (-not $p.Start()) {
-        Stop-DisplayAudio
-        try { if (Test-Path $tmpWav) { Remove-Item -Force $tmpWav -ErrorAction SilentlyContinue } } catch {}
-        $script:DisplayOut = $null
-        $script:DisplayFinal = $null
-        $script:DisplayAudioStartUtc = [datetime]::MinValue
-        $script:RecKind = $null
-        return @{ ok = $false; error = 'ffmpeg failed to start' }
+        return (Fail-DesktopStart -Proc $null -TmpVid $tmpVid -TmpWav $tmpWav -Error 'ffmpeg failed to start' -Kind $Kind)
     }
     $script:DisplayVideoStartUtc = [datetime]::UtcNow
     $script:DisplayProc = $p
 
-    if ($script:DisplayHasAudio -and $script:DisplayAudioStartUtc -ne [datetime]::MinValue) {
-        $lead = ($script:DisplayVideoStartUtc - $script:DisplayAudioStartUtc).TotalSeconds
-        Write-Log ("rec A/V start skew: audio_ahead={0:0.000}s" -f $lead)
-    }
+    Write-Log ("rec start kind={0} crop={1},{2} {3}x{4} tmp={5} final={6} pid={7}" -f `
+        $Kind, $X, $Y, $W, $H, $tmpVid, $final, $p.Id)
 
-    Write-Log ("rec start kind={0} crop={1},{2} {3}x{4} tmp={5} final={6} audio={7} pid={8}" -f `
-        $Kind, $X, $Y, $W, $H, $tmpVid, $final, $script:DisplayHasAudio, $p.Id)
-    # Fail fast if gdigrab dies immediately (bad crop / device)
-    Start-Sleep -Milliseconds 250
+    Start-Sleep -Milliseconds 350
     if ($p.HasExited) {
         Write-Log ("rec ffmpeg exited early code={0} kind={1}" -f $p.ExitCode, $Kind)
-        Stop-DisplayAudio
-        try { if (Test-Path $tmpWav) { Remove-Item -Force $tmpWav -ErrorAction SilentlyContinue } } catch {}
-        try { if (Test-Path $tmpVid) { Remove-Item -Force $tmpVid -ErrorAction SilentlyContinue } } catch {}
-        try { $p.Dispose() } catch {}
-        $script:DisplayProc = $null
-        $script:DisplayOut = $null
-        $script:DisplayFinal = $null
-        $script:DisplayAudioStartUtc = [datetime]::MinValue
-        $script:DisplayVideoStartUtc = [datetime]::MinValue
-        $script:RecKind = $null
-        return @{ ok = $false; error = 'ffmpeg exited immediately (bad crop or grab failed)'; recording = $false; mode = $Kind }
+        return (Fail-DesktopStart -Proc $p -TmpVid $tmpVid -TmpWav $tmpWav -Error 'ffmpeg exited immediately (bad crop or grab failed)' -Kind $Kind)
     }
+
+    # Plain MP4 opens ~48 bytes quickly; require any non-empty stub (not 0-byte hang)
+    $grew = $false
+    for ($i = 0; $i -lt 12; $i++) {
+        Start-Sleep -Milliseconds 200
+        if ($p.HasExited) { break }
+        if ((Get-FileSizeSafe $tmpVid) -ge 32) { $grew = $true; break }
+    }
+    if ($p.HasExited) {
+        Write-Log ("rec ffmpeg exited during warmup code={0} kind={1} size={2}" -f $p.ExitCode, $Kind, (Get-FileSizeSafe $tmpVid))
+        return (Fail-DesktopStart -Proc $p -TmpVid $tmpVid -TmpWav $tmpWav -Error 'ffmpeg exited during start (grab failed)' -Kind $Kind)
+    }
+    if (-not $grew) {
+        Write-Log ("rec ffmpeg hung (no output after warmup) kind={0} pid={1}" -f $Kind, $p.Id)
+        return (Fail-DesktopStart -Proc $p -TmpVid $tmpVid -TmpWav $tmpWav -Error 'ffmpeg hung (no video frames) - retry REC' -Kind $Kind)
+    }
+
+    # Audio after video is confirmed writing (reduces empty WAV + A/V skew from warmup)
+    Start-LoopbackAudio $tmpWav
+    if ($script:DisplayHasAudio -and $script:DisplayAudioStartUtc -ne [datetime]::MinValue) {
+        # Negative lead = video started first (expected now)
+        $lead = ($script:DisplayVideoStartUtc - $script:DisplayAudioStartUtc).TotalSeconds
+        Write-Log ("rec A/V start skew: audio_ahead={0:0.000}s (negative = video first)" -f $lead)
+    }
+
+    Write-Log ("rec warmup ok kind={0} tmpSize={1} audio={2}" -f $Kind, (Get-FileSizeSafe $tmpVid), $script:DisplayHasAudio)
     return @{
         ok        = $true
         path      = $final
@@ -652,6 +859,11 @@ if (Test-Path $pidFile) {
     }
 }
 $PID | Set-Content $pidFile -Encoding ASCII
+
+# Clear zombies from prior host crash (stuck gdigrab left empty REC files)
+$nOrphan = Stop-OrphanRecFfmpeg
+Clear-StaleRecTemps
+if ($nOrphan -gt 0) { Write-Log "startup cleaned $nOrphan orphan ffmpeg" }
 
 $listener = New-Object System.Net.HttpListener
 $prefix = "http://127.0.0.1:$Port/"
