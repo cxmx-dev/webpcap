@@ -1,0 +1,10 @@
+*.exe
+*.png
+*.webp
+webpcap.ini
+docs/
+pics/
+*.log
+webpcap.log
+Thumbs.db
+desktop.ini
