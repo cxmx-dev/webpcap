@@ -1,0 +1,21 @@
+name: Timezone Sanitize (OPSEC)
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sanitize:
+    name: No timezone tokens in public tree
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Scan for timezone leakage
+        run: bash scripts/sanitize-timezones.sh

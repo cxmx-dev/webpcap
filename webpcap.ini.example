@@ -1,0 +1,61 @@
+[paths]
+; ffmpeg on PATH, or full path to ffmpeg.exe
+ffmpeg=ffmpeg.exe
+outdir=%USERPROFILE%\Pictures\Screenshots\webpcap CAPS
+; optional: ffmpeg used for CAPS stills (default: paths.ffmpeg if on system drive, else WinGet/Program Files ffmpeg)
+; caps_ffmpeg=<path-to>\ffmpeg.exe
+; MP4 display + canvas recordings
+viddir=%USERPROFILE%\Videos\webpcap REC
+
+[encode]
+quality=90
+lossless=0
+
+[video]
+fps=30
+crf=23
+port=19787
+; display/window/region REC: system = speakers loopback into same MP4; off = silent
+audio=system
+; A/V fine-tune after auto start-offset (ms). Positive = delay audio (sound later); negative = advance audio
+audio_delay_ms=0
+; encoder: auto (h264_nvenc if this ffmpeg+GPU have it, else libx264) | nvenc | x264
+encoder=auto
+; capture: auto (ddagrab on full display if available; gdigrab for window/region) | ddagrab | gdigrab
+capture=auto
+
+[hotkeys]
+remap=1
+
+[daemon]
+; 1 = show tray icon when idle (so you can see the daemon is up); 0 = hide until REC
+tray_icon=1
+; 1 = AHK pings video-host and restarts it if down
+watchdog=1
+; host health check interval (seconds, min 10)
+watchdog_sec=30
+; 1 = after sleep/wake, Reload AHK to re-register PrtSc hooks (soft-rehook if REC active)
+rehook_on_resume=1
+; ms of silence after the REC start tone before capture begins (keeps the tone out of clips)
+rec_tone_gap_ms=250
+; 0 = use plain AutoHotkey64.exe instead of the UI Access build
+; ahk_uia=0
+
+[capture]
+; which monitor PrtSc stills (screen) / full-display REC (rec_screen) grab: mouse (monitor under cursor) | primary | all
+screen=mouse
+rec_screen=mouse
+; 1 = brief "Screen N" flash after PrtSc (never in the capture); 0 = off
+flash=1
+
+[safe]
+; Shift+PrtSc / F22 safe-to-post shot: taskbar pixel block size (min 16)
+; block_px=32
+; 1 = F22 (no modifiers) also takes a safe shot
+; f22=1
+
+[windows]
+; move new browser windows from other monitors to the primary once
+browsers_to_primary=1
+; which programs count as browsers (comma-separated exe names)
+; browsers=firefox.exe,chrome.exe,msedge.exe,brave.exe,opera.exe,vivaldi.exe
